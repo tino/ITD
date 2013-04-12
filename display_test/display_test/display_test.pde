@@ -11,8 +11,8 @@ String message;
 String inString;
 int state=0;
 String inMsg = "";
-float[] rawQueue = new float[400];
-float[] avgQueue = new float[400];
+int[] xQueue = new int[400];
+int [] yQueue = new int[400];
 int[] magneticQueue = new int[400];
 boolean _running = true;
 int _orientation = 0;
@@ -30,7 +30,7 @@ void setup() {
 }
 
 float toYScreen(float y) {
-  return (y + 10)*30;
+  return (y * 300) + 10;
 }
 
 void draw() {
@@ -46,33 +46,29 @@ void draw() {
     }
     textSize(12);
     text("0", 0, toYScreen(0));
-    text("2.5", 0, toYScreen(2.5));
-    text("5", 0, toYScreen(5));
-    text("-1", 0, toYScreen(-1));
-//    text(rawQueue[rawQueue.length-1], 0, 20);
+    text("1", 0, toYScreen(1));
+//    text(xQueue[xQueue.length-1], 0, 20);
 //    text(magneticQueue[magneticQueue.length-1], 0, 40);
 //    text(_lastUpdateActivation, 0, 60);
+    // line every second
     for (int i=0; i<=400; i++) {
-      if (i%20 == 0) {
+      if (i % HZ == 0) {
         line(i, toYScreen(0)-20, i, toYScreen(0)+20);
       }
     }
     noFill();
     stroke(196, 0, 0);
     beginShape();
-    for (int i=0; i<rawQueue.length; i++) {
-      curveVertex(i, toYScreen(rawQueue[i]));
+    for (int i=0; i<xQueue.length; i++) {
+      curveVertex(i, toYScreen(xQueue[i]));
     }
     endShape();
     stroke(104, 175, 244);
     beginShape();
-    for (int i=0; i<avgQueue.length; i++) {
-      curveVertex(i, toYScreen(avgQueue[i]));
+    for (int i=0; i<yQueue.length; i++) {
+      curveVertex(i, toYScreen(yQueue[i]));
     }
     endShape();
-    setOrientation();
-    setUpdateActivation();
-//    println(_orientation
 
     if (updateActivated()) {
       fill(255, 255, 255);
@@ -110,34 +106,22 @@ void setUpdateActivation() {
 }
 
 void setOrientation() {
-  // Calculate the averages of the rawQueue over the last half second
-  // If the two last averages are above / below a certain range, it 
-  // determines up or down state.
-  // data of last half second is 1/2 * HZ values from rawQueue
-  int items = HZ / 2;
-  float fhalf = 0; 
-  float lhalf = 0;
-  for(int i=rawQueue.length-1; i > (rawQueue.length - items - 1); i--) {
-    if (i > (rawQueue.length - 1 - items / 2)) {
-      // first half
-      fhalf = fhalf + rawQueue[i];
-    } else {
-      lhalf = lhalf + rawQueue[i];
+  // see http://www.parallax.com/portals/0/downloads/docs/prod/sens/28036-4DirectionalTiltSensor-v1.0.pdf
+  // 0 / 0 is palm down
+  // 1 / 1 is palm down, sorta... :)
+  // average over the half second
+  int sum = 0;
+  for (int i=1; i < HZ/2 + 1; i++) {
+    if (xQueue[xQueue.length - i] == yQueue[yQueue.length - i]) {
+      sum = sum + xQueue[xQueue.length - i];
     }
   }
-  float favg = fhalf / (items / 2);
-  float lavg = lhalf / (items / 2);
-  if ((favg > THRESHOLD) && (lavg > THRESHOLD)) {
+ 
+  if ((sum / float(HZ/2)) > 0.8) {
     _orientation = 1;
-  } else if ((favg < THRESHOLD) && (lavg < THRESHOLD)) {
+  } else if ((sum / float(HZ/2)) < 0.1) {
     _orientation = 0;
-  } // else don't change the orientation
-//  print("lavg: ");
-//  print(lavg);
-//  print(" favg: ");
-//  print(favg);
-//  print(" or: ");
-//  println(_orientation);
+  } // else don't change
 }
 
 boolean checkForBalanceCheck() {
@@ -146,93 +130,40 @@ boolean checkForBalanceCheck() {
   int items = 2 * HZ;
   float[] diffs = new float[items];
   
-  for (int i=0; i<items; i++) {
-    float diff = rawQueue[rawQueue.length-1-i] - avgQueue[avgQueue.length-1-i];
-    
-    if (abs(diff) > BALANCE_SHAKE_THRESHOLD) {
-      diffs[i] = diff;
-    }
-  }
-  
-  // Check for sign changes within non-zero values
   int changes = 0;
-  float last = diffs[0];
-  for (int i=0; i<items; i++) {
-    if (last != 0.0) {
-//      if (diffs[i] != 0.0) {
-        if ((abs(last - diffs[i]) == last) || (last < 0.0) ^ (diffs[i] < 0.0)) {
-           changes = changes + 1;
-           // print(last); print(" "); print(diffs[i]);print(" ");
-        }
-        last = diffs[i];
-//      }
-    } else {
-      last = diffs[i];
-    }
-    
+  for (int i=1; i<items; i++) {
+    if (xQueue[xQueue.length-i] != xQueue[xQueue.length-i-1])
+      changes = changes + 1;
   }
-  println(diffs);
-//  println(changes);
-  
-  if (changes >= 5) {
+//  print("changes: ");
+//  print(changes);
+//  print(" items: ");
+//  println(items);
+  if (changes > 0 && (items / changes < 4)) {
     return true;
   } else {
     return false;
-  } 
-//  print("lavg: ");
-//  print(lavg);
-//  print(" favg: ");
-//  print(favg);
-//  print(" or: ");
+  }
 }
 
 boolean checkForUpdate() {
-  // Check for peaks in the last seconds. A positive, negative and positive peak
-  // mean a shake. Peaks are counted as sign changes. 
+  // Check for one single peak in the last second
   int items = HZ;
-  float[] diffs = new float[HZ];
+  int[] diffs = new int[items];
   
-  for (int i=0; i<HZ; i++) {
-    float diff = rawQueue[rawQueue.length-1-i] - avgQueue[avgQueue.length-1-i];
-    
-    if (diff > SHAKE_THRESHOLD_DOWN) {
-      diffs[i] = diff;
-    }
-    if (diff < SHAKE_THRESHOLD_UP) {
-      diffs[i] = diff;
-    }
-  }
-  
-  // Check for sign changes within non-zero values
   int changes = 0;
-  float last = diffs[0];
-  for (int i=0; i<HZ; i++) {
-    if (last != 0.0) {
-//      if (diffs[i] != 0.0) {
-        if ((abs(last - diffs[i]) == last) || (last < 0.0) ^ (diffs[i] < 0.0)) {
-           changes = changes + 1;
-           // print(last); print(" "); print(diffs[i]);print(" ");
-        }
-        last = diffs[i];
-//      }
-    } else {
-      last = diffs[i];
-    }
-    
+  for (int i=1; i<items; i++) {
+    if (xQueue[xQueue.length-i] != xQueue[xQueue.length-i-1])
+      changes = changes + 1;
   }
-//  println(diffs);
-//  println(changes);
+
+  println(changes);
   
-  if (changes >= 2) {
+  if (changes == 2) {
     return true;
   } else {
     return false;
   } 
-//  print("lavg: ");
-//  print(lavg);
-//  print(" favg: ");
-//  print(favg);
-//  print(" or: ");
 }
   
 
@@ -242,25 +173,21 @@ void serialEvent(Serial p) {
     if (inString!=null) {
       inString = trim(inString);
       String[] values = splitTokens(inString);
-      if (values.length == 4) {
+      if (values.length == 3) {
         try {
-          float x = float(values[0]);
-          float y = float(values[1]);
-          float z = float(values[2]);
-          int m = int(values[3]);
-          pushQueue(z);
+          int x = int(values[0]);
+          int y = int(values[1]);
+          int m = int(values[2]);
+//          int m = int(values[3]);
+          pushXQueue(x);
+          pushYQueue(y);
           pushMagneticQueue(m);
-          
-          // calculate avg over the last 20 measures
-          float avg = 0;
-          for (int i=1; i<=20; i++) {
-            avg = avg + rawQueue[rawQueue.length-i];
-          }
-          avg = avg / 20;
-          pushAvgQueue(avg);
+          setOrientation();
+          setUpdateActivation();
         } catch (Exception e) {
           println("Error converting values");
         }
+
       }
     }
   } catch(Exception e) {
@@ -277,15 +204,15 @@ void keyPressed() {
 }
 
 
-void pushQueue(float v) {
-  float[] newQueue = subset(rawQueue, 1);
-  float[] newQueue2 = append(newQueue, v);
-  rawQueue = newQueue2;
+void pushXQueue(int v) {
+  int[] newQueue = subset(xQueue, 1);
+  int[] newQueue2 = append(newQueue, v);
+  xQueue = newQueue2;
 }
-void pushAvgQueue(float v) {
-  float[] newQueue = subset(avgQueue, 1);
-  float[] newQueue2 = append(newQueue, v);
-  avgQueue = newQueue2;
+void pushYQueue(int v) {
+  int[] newQueue = subset(yQueue, 1);
+  int[] newQueue2 = append(newQueue, v);
+  yQueue = newQueue2;
 }
 void pushMagneticQueue(int v) {
   int[] newQueue = subset(magneticQueue, 1);
