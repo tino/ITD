@@ -4,11 +4,7 @@
 
 // Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
-#define ID 'U'
-
-//enable to show debugging information about parsing and operations
-//not so good on broadcast channels
-const boolean DEBUG = false;
+#define ID 'Y'
 
 // Pins
 const int MAGNETIC_PIN = 7;
@@ -17,7 +13,7 @@ const int TILT_PIN_2 = 8;
 
 // Thresholds
 const int HZ = 10;
-const int UPDATE_ACTIVATION_WINDOW = 1 * 1000; // 10 seconds
+const int UPDATE_ACTIVATION_WINDOW = 3 * 1000; // 10 seconds
 const int UPDATE_WINDOW = 10 * 1000; // 10 seconds
 float THRESHOLD = 3.0;
 float SHAKE_THRESHOLD_DOWN = 3.0;
@@ -53,6 +49,13 @@ unsigned long _updateWindowOpenStart = 0;
 #define REGISTERSIZE 10
 long int reg[REGISTERSIZE];
 
+//enable to show debugging information about parsing and operations
+//not so good on broadcast channels
+boolean debug=false;
+
+//debug mode will toggle this pin regularly, to let you know the parser is working
+int beeperPin=12;
+
 //Afro will delay this much before answering a broadcast message, to make collisions less likely
 int broadcastDelay = (ID*79)%255;
 
@@ -73,8 +76,9 @@ void setup(){
   pinMode(TILT_PIN_2, INPUT);
   pinMode(13, OUTPUT);
 
-  Serial.print(ID);
-  Serial.println(" has entered the building");
+  Serial.write(100);
+  Serial.write(0x00);
+  Serial.write(100);
 
 }
 
@@ -83,56 +87,55 @@ void loop(){
   static unsigned long _lastLoop = 0;
   static boolean _on = false;
 
-  processSerial();
-
   if (millis() - _lastLoop > 1000/HZ)  {
     _lastLoop = millis();
-
-    int x = digitalRead(TILT_PIN_1);
-    int y = digitalRead(TILT_PIN_2);
-    int m = analogRead(MAGNETIC_PIN);
-    pushQueue(_xQueue, HISTORY, x);
-    pushQueue(_yQueue, HISTORY, y);
-    pushQueue(_magneticQueue, HISTORY, m);
-
-    setOrientation();
-    setUpdateActivation();
-
-    switch (_state) {
-
-      case PASSIVE:
-        if (updateActivated()) {
-          // We are passive and update was activated, so broadcast
-          sendDebug("updateActivated", 1);
-          _state = UPDATE_ACTIVATED;
-          sendRequest('0', UPDATE_SYN, 'x', 'x');
-        }
-        if (checkForBalanceCheck()) {
-          sendDebug("balance", 1);
-          // TODO: LEDS
-        }
-      break;
-
-      case UPDATE_ACTIVATED:
-        // if updateActivation is over reset state
-        if (!updateActivated()) _state = PASSIVE;
-      break;
-
-      case UPDATE_ACKED:
-        // if updateActivation is over reset state and we havent' moved to
-        // UPDATE_OPEN in the mean time, reset
-        if (!updateActivated()) _state = PASSIVE;
-        // TODO: close window, so the other side is closed for sure as well?
-      break;
-
-      case UPDATE_OPENED:
-        // If the time window has closed, reset state to PASSIVE
-        if (millis() - _updateWindowOpenStart > UPDATE_WINDOW) _state = PASSIVE;
-      break;
-    }
+    processSerial();
   }
+  //   int x = digitalRead(TILT_PIN_1);
+  //   int y = digitalRead(TILT_PIN_2);
+  //   int m = analogRead(MAGNETIC_PIN);
+  //   pushQueue(_xQueue, HISTORY, x);
+  //   pushQueue(_yQueue, HISTORY, y);
+  //   pushQueue(_magneticQueue, HISTORY, m);
 
-  // Heartbeats and DEBUG
+  //   setOrientation();
+  //   setUpdateActivation();
+
+  //   switch (_state) {
+
+  //     case PASSIVE:
+  //       if (updateActivated()) {
+  //         // We are passive and update was activated, so broadcast
+  //         sendDebug("updateActivated", 1);
+  //         _state = UPDATE_ACTIVATED;
+  //         sendRequest(0, UPDATE_SYN, 'x', 'x');
+  //       }
+  //       if (checkForBalanceCheck()) {
+  //         sendDebug("balance", 1);
+  //         // TODO: LEDS
+  //       }
+  //     break;
+
+  //     case UPDATE_ACTIVATED:
+  //       // if updateActivation is over reset state
+  //       if (!updateActivated()) _state = PASSIVE;
+  //     break;
+
+  //     case UPDATE_ACKED:
+  //       // if updateActivation is over reset state and we havent' moved to
+  //       // UPDATE_OPEN in the mean time, reset
+  //       if (!updateActivated()) _state = PASSIVE;
+  //       // TODO: close window, so the other side is closed for sure as well?
+  //     break;
+
+  //     case UPDATE_OPENED:
+  //       // If the time window has closed, reset state to PASSIVE
+  //       if (millis() - _updateWindowOpenStart > UPDATE_WINDOW) _state = PASSIVE;
+  //     break;
+  //   }
+  // }
+
+  // Heartbeats and debug
   if (millis() - _lastHeartBeat > 2000) {
     // sendDebug("Alive", 1);
     // sendDebug("orientation", _orientation);
@@ -307,14 +310,14 @@ void processBuffer() {
   static int operand2 = -1;
   char c;
   c= Serial.read();
-  // if (DEBUG){
-  //   digitalWrite(13,HIGH);
-  //   delay(5);
-  //   digitalWrite(13,LOW);
-  //   Serial.print(state);
-  //   Serial.print(" ");
-  //   Serial.println(c);
-  // }
+  if (debug){
+    digitalWrite(13,HIGH);
+    delay(5);
+    digitalWrite(13,LOW);
+    Serial.print(state);
+    Serial.print(" ");
+    Serial.println(c);
+  }
 
   switch(state) {
 
@@ -397,7 +400,7 @@ void processBuffer() {
 }
 
 void execute(unsigned char from, unsigned char operation, unsigned char operand1, int operand2){
-  if (DEBUG){
+  if (debug){
     Serial.println("----");
     Serial.print(" from=");
     Serial.print(from);
@@ -412,46 +415,50 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
   switch (operation) {
     case UPDATE_SYN:
-      if (DEBUG) {
-        Serial.print("UPDATE_SYN; state: ");
-        Serial.println(_state);
-      }
-      // If we are in UPDATE_ACTIVATED state as well, we respond
-      if (_state == UPDATE_ACTIVATED) {
-        // We are ready to do an update, let's see who it is and reply
-        sendRequest(from, UPDATE_ACK, '0', '0');
-        _state = UPDATE_ACKED;
-      }
-      // We are either passive, or already in conversation with someone, so
-      // ignore
+      if (operand1 > 122) operand1 = '@';
+      sendRequest(from, UPDATE_SYN, operand1+1, 0);
+
     break;
+    // case UPDATE_SYN:
+    //   if (debug) {
+    //     Serial.print("UPDATE_SYN; state: ");
+    //     Serial.println(_state);
+    //   }
+    //   // If we are in UPDATE_ACTIVATED state as well, we respond
+    //   if (_state == UPDATE_ACTIVATED) {
+    //     // We are ready to do an update, let's see who it is and reply
+    //     sendRequest(from, UPDATE_ACK, 0);
+    //     _state = UPDATE_ACKED;
+    //   }
+    //   // We are either passive, or already in conversation with someone, so
+    //   // ignore
+    // break;
 
-    case UPDATE_ACK:
-      // Someone responds to an UPDATE_SYN request. Are we still
-      // in the UPDATE_ACTIVATED state?
-      if (DEBUG) {
-        Serial.print("UPDATE_ACK; state: ");
-        Serial.println(_state);
-      }
+    // case UPDATE_ACK:
+    //   // Someone responds to an UPDATE_SYN request. Are we still
+    //   // in the UPDATE_ACTIVATED state?
+    //   if (debug) {
+    //     Serial.print("UPDATE_ACK; state: ");
+    //     Serial.println(_state);
+    //   }
 
-      if (_state == UPDATE_ACKED || _state == UPDATE_ACTIVATED) {
-        // Oke, activation window is open
-        sendRequest(from, UPDATE_OPEN, '0', '0');
-        _state = UPDATE_OPENED;
-        _updateWindowOpenStart = millis();
-      }
-    break;
+    //   if (_state != UPDATE_ACTIVATED) return;
+    //   // Oke, activation window is open
+    //   _state = UPDATE_OPENED;
+    //   _updateWindowOpenStart = millis();
+    //   sendRequest(from, UPDATE_OPEN, 0, 0);
+    // break;
 
-    case UPDATE_OPEN:
-      // Response to UPDATE_ACK, so we should be in UPDATE_ACKED state
-      if (DEBUG) {
-        Serial.print("UPDATE_OPEN; state: ");
-        Serial.println(_state);
-      }
-      if (_state != UPDATE_ACKED) return;
-      // Window is opened on the other side, open here as well
-      _state = UPDATE_OPENED;
-      _updateWindowOpenStart = millis();
+    // case UPDATE_OPEN:
+    //   // Response to UPDATE_ACK, so we should be in UPDATE_ACKED state
+    //   if (debug) {
+    //     Serial.print("UPDATE_OPEN; state: ");
+    //     Serial.println(_state);
+    //   }
+    //   if (_state != UPDATE_ACKED) return;
+    //   // Window is opened on the other side, open here as well
+    //   _state = UPDATE_OPENED;
+    //   _updateWindowOpenStart = millis();
   }
 }
 
