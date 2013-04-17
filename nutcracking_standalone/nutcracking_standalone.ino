@@ -19,6 +19,7 @@ const int TILT_PIN_2 = 8;
 const int HZ = 10;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 10 * 1000;
+const int UPDATE_SHAKE_DURATION = 1000 / 2;
 
 // Thresholds
 const float THRESHOLD = 3.0;
@@ -27,15 +28,21 @@ const float SHAKE_THRESHOLD_UP = -1.5 ;
 const float BALANCE_SHAKE_THRESHOLD = 3.0;
 
 // Messaging commands
-#define UPDATE_WINDOW_SYN        'A' // Start update sync
-#define UPDATE_WINDOW_ACK        'B' // Acknowledge update sync
-#define UPDATE_WINDOW_OPEN       'C' // Update window is open
+#define SYN_UPDATE_WINDOW        'A' // Start update sync
+#define ACK_UPDATE_WINDOW        'B' // Acknowledge update sync
+#define OPEN_UPDATE_WINDOW       'C' // Update window is open
+#define SYN_UPDATE_SHAKE         'D' // Start shake sync
+#define ACK_UPDATE_SHAKE         'E' // Acknowledge shake sync
+#define DO_UPDATE                'F' // Do the update!
 
 // States
 #define PASSIVE                  1
 #define UPDATE_WINDOW_ACTIVATED  2
 #define UPDATE_WINDOW_ACKED      3
-#define UPDATE_WINDOW_OPENED     4
+#define UPDATE_WINDOW_OPEN       4
+#define UPDATE_SHAKE_ACTIVATED   5
+#define UPDATE_SHAKE_ACKED       6
+#define UPDATE_DONE              7
 
 
 // Deque's (see bottom for push methods)
@@ -49,6 +56,8 @@ int _orientation = 0;
 int _state = PASSIVE;
 unsigned long _lastUpdateActivation = 0;
 unsigned long _updateWindowOpenStart = 0;
+unsigned int _updateWindowPartner = 0;
+unsigned long _updateShakeTime = 0;
 
 
 void setup(){
@@ -97,7 +106,7 @@ void loop(){
           // We are passive and update was activated, so broadcast
           sendDebug("updateActivated", 1);
           _state = UPDATE_WINDOW_ACTIVATED;
-          sendRequest('0', UPDATE_WINDOW_SYN, 'x', 'x');
+          sendRequest('0', SYN_UPDATE_WINDOW, 'x', 'x');
         }
         if (checkForBalanceCheck()) {
           sendDebug("balance", 1);
@@ -112,14 +121,15 @@ void loop(){
 
       case UPDATE_WINDOW_ACKED:
         // if updateActivation is over reset state and we havent' moved to
-        // UPDATE_WINDOW_OPEN in the mean time, reset
+        // OPEN_UPDATE_WINDOW in the mean time, reset
         if (!updateActivated()) _state = PASSIVE;
         // TODO: close window, so the other side is closed for sure as well?
       break;
 
-      case UPDATE_WINDOW_OPENED:
+      case UPDATE_WINDOW_OPEN:
         // If the time window has closed, reset state to PASSIVE
         if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
+          _updateWindowPartner = 0;
           _state = PASSIVE;
           break;
         }
@@ -127,6 +137,32 @@ void loop(){
         // Check for an update shake
         if (checkForUpdate()) {
           // send message to window partner
+          sendRequest(_updateWindowPartner, SYN_UPDATE_SHAKE, 0, 0);
+          _state = UPDATE_SHAKE_ACTIVATED;
+        }
+      break;
+
+      case UPDATE_SHAKE_ACTIVATED:
+        // reset if it takes too much time
+        if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
+          if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
+            _state = PASSIVE;
+            _updateWindowPartner = 0;
+          } else {
+            _state = UPDATE_WINDOW_OPEN;
+          }
+        }
+      break;
+
+      case UPDATE_SHAKE_ACKED:
+        // reset if it takes too much time
+        if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
+          if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
+            _state = PASSIVE;
+            _updateWindowPartner = 0;
+          } else {
+            _state = UPDATE_WINDOW_OPEN;
+          }
         }
       break;
     }
@@ -226,6 +262,10 @@ boolean checkForUpdate() {
   }
 }
 
+void doShake() {
+  // TODO: update the numbers!
+}
+
 // Helper function to use arrays as deque's
 // push v to array[0] and shift every thing up 1, last items slides of
 void pushQueue(int array[], int size, int v) {
@@ -272,47 +312,71 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
   }
 
   switch (operation) {
-    case UPDATE_WINDOW_SYN:
+    case SYN_UPDATE_WINDOW:
       if (DEBUG) {
-        Serial.print("UPDATE_WINDOW_SYN; state: ");
+        Serial.print("SYN_UPDATE_WINDOW; state: ");
         Serial.println(_state);
       }
       // If we are in UPDATE_WINDOW_ACTIVATED state as well, we respond
       if (_state == UPDATE_WINDOW_ACTIVATED) {
         // We are ready to do an update, let's see who it is and reply
-        sendRequest(from, UPDATE_WINDOW_ACK, '0', '0');
+        sendRequest(from, ACK_UPDATE_WINDOW, '0', '0');
         _state = UPDATE_WINDOW_ACKED;
       }
       // We are either passive, or already in conversation with someone, so
       // ignore
     break;
 
-    case UPDATE_WINDOW_ACK:
-      // Someone responds to an UPDATE_WINDOW_SYN request. Are we still
+    case ACK_UPDATE_WINDOW:
+      // Someone responds to an SYN_UPDATE_WINDOW request. Are we still
       // in the UPDATE_WINDOW_ACTIVATED state?
       if (DEBUG) {
-        Serial.print("UPDATE_WINDOW_ACK; state: ");
+        Serial.print("ACK_UPDATE_WINDOW; state: ");
         Serial.println(_state);
       }
 
       if (_state == UPDATE_WINDOW_ACKED || _state == UPDATE_WINDOW_ACTIVATED) {
         // Oke, activation window is open
-        sendRequest(from, UPDATE_WINDOW_OPEN, '0', '0');
-        _state = UPDATE_WINDOW_OPENED;
+        sendRequest(from, OPEN_UPDATE_WINDOW, '0', '0');
+        _state = UPDATE_WINDOW_OPEN;
+        _updateWindowPartner = from;
         _updateWindowOpenStart = millis();
       }
     break;
 
-    case UPDATE_WINDOW_OPEN:
-      // Response to UPDATE_WINDOW_ACK, so we should be in UPDATE_WINDOW_ACKED state
+    case OPEN_UPDATE_WINDOW:
+      // Response to ACK_UPDATE_WINDOW, so we should be in UPDATE_WINDOW_ACKED state
       if (DEBUG) {
-        Serial.print("UPDATE_WINDOW_OPEN; state: ");
+        Serial.print("OPEN_UPDATE_WINDOW; state: ");
         Serial.println(_state);
       }
       if (_state != UPDATE_WINDOW_ACKED) return;
       // Window is opened on the other side, open here as well
-      _state = UPDATE_WINDOW_OPENED;
+      _state = UPDATE_WINDOW_OPEN;
+      _updateWindowPartner = from;
       _updateWindowOpenStart = millis();
+    break;
+
+    case SYN_UPDATE_SHAKE:
+      // window still open?
+      if (_state == UPDATE_WINDOW_OPEN || _state == UPDATE_SHAKE_ACTIVATED) {
+        // TODO: do we need to check from == _updateWindowPartner?
+        sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
+        _state = UPDATE_SHAKE_ACKED;
+      }
+    break;
+
+    case ACK_UPDATE_SHAKE:
+      // Was ours within the limit?
+      if (_state == UPDATE_SHAKE_ACTIVATED) {
+        // We both had a shake!
+        // are the orientations different?
+        if (_orientation != operand1) {
+          sendRequest(from, DO_UPDATE, _orientation, 0);
+          doShake();
+        }
+      }
+
   }
 }
 
