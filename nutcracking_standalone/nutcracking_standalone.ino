@@ -1,10 +1,11 @@
+#define ID 'U'
+// ^ Device ID
+// Letters A-Z can be used. 0 is reserved for broadcast
+
 #include <Firmata.h>
+
 // Constants and global vars
 // ----------
-
-// Device ID
-// Letters A-Z can be used. 0 is reserved for broadcast
-#define ID 'U'
 
 //enable to show debugging information about parsing and operations
 //not so good on broadcast channels
@@ -16,10 +17,10 @@ const int TILT_PIN_1 = 7;
 const int TILT_PIN_2 = 8;
 
 // Times
-const int HZ = 10;
+const int HZ = 20;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 10 * 1000;
-const int UPDATE_SHAKE_DURATION = 1000 / 2;
+const int UPDATE_SHAKE_DURATION = 2 * 1000;
 
 // Thresholds
 const float THRESHOLD = 3.0;
@@ -34,6 +35,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define SYN_UPDATE_SHAKE         'D' // Start shake sync
 #define ACK_UPDATE_SHAKE         'E' // Acknowledge shake sync
 #define DO_UPDATE                'F' // Do the update!
+#define ABORT                    'Z' // Abort window and shake
 
 // States
 #define PASSIVE                  1
@@ -50,14 +52,20 @@ const int HISTORY = 4 * HZ; // how many datapoints to rememeber (secs * HZ)
 int _xQueue[HISTORY];
 int _yQueue[HISTORY];
 int _magneticQueue[HISTORY];
+int _pastChanges[HZ/4];
+
 
 // Global variables
+int _balance = 0;
 int _orientation = 0;
 int _state = PASSIVE;
+int _lastState = PASSIVE;
 unsigned long _lastUpdateActivation = 0;
 unsigned long _updateWindowOpenStart = 0;
 unsigned int _updateWindowPartner = 0;
 unsigned long _updateShakeTime = 0;
+unsigned long _updateShakeReceivedTime = 0;
+unsigned long _lastBalanceCheck = 0;
 
 
 void setup(){
@@ -69,6 +77,7 @@ void setup(){
   pinMode(TILT_PIN_2, INPUT);
   pinMode(13, OUTPUT);
 
+  exerternalMonitor("entrance", ID);
   if (DEBUG) {
     Serial.print(ID);
     Serial.println(" has entered the building");
@@ -76,12 +85,19 @@ void setup(){
 
 }
 
+// Loop vars
+
 void loop(){
   static unsigned long _lastHeartBeat = 0;
   static unsigned long _lastLoop = 0;
   static boolean _on = false;
 
   processSerial();
+
+  // if (_lastState != _state) {
+  //   exerternalMonitor("statechange", _state);
+  //   _lastState = _state;
+  // }
 
   if (millis() - _lastLoop > 1000/HZ)  {
     _lastLoop = millis();
@@ -97,6 +113,9 @@ void loop(){
     // Process readings
     setOrientation();
     setUpdateActivation();
+    sendDebug("x", x, 2);
+
+    checkForUpdate();
 
     // Act according to state
     switch (_state) {
@@ -110,6 +129,7 @@ void loop(){
         }
         if (checkForBalanceCheck()) {
           sendDebug("balance", 1);
+          exerternalMonitor("showbalance", _balance);
           // TODO: LEDS
         }
       break;
@@ -122,57 +142,65 @@ void loop(){
       case UPDATE_WINDOW_ACKED:
         // if updateActivation is over reset state and we havent' moved to
         // OPEN_UPDATE_WINDOW in the mean time, reset
-        if (!updateActivated()) _state = PASSIVE;
-        // TODO: close window, so the other side is closed for sure as well?
+        if (!updateActivated()) abort();
       break;
 
       case UPDATE_WINDOW_OPEN:
         // If the time window has closed, reset state to PASSIVE
         if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
-          _updateWindowPartner = 0;
-          _state = PASSIVE;
+          abort();
           break;
         }
 
         // Check for an update shake
         if (checkForUpdate()) {
-          // send message to window partner
-          sendRequest(_updateWindowPartner, SYN_UPDATE_SHAKE, 0, 0);
-          _state = UPDATE_SHAKE_ACTIVATED;
+          if (millis() - _updateShakeReceivedTime < UPDATE_SHAKE_DURATION) {
+            // If we have received a SYN_UPDATE_SHAKE within UPDATE_SHAKE_DURATION
+            // we should acknowledge
+            sendRequest(_updateWindowPartner, ACK_UPDATE_SHAKE, _orientation, 0);
+            _state = UPDATE_SHAKE_ACKED;
+          } else {
+            // We haven't received a syn request, so send one ourselves
+            sendRequest(_updateWindowPartner, SYN_UPDATE_SHAKE, _orientation, 0);
+            _state = UPDATE_SHAKE_ACTIVATED;
+
+          }
         }
       break;
 
       case UPDATE_SHAKE_ACTIVATED:
         // reset if it takes too much time
+        if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
+          _state = PASSIVE;
+          _updateWindowPartner = 0;
+          break;
+        }
         if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
-          if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
-            _state = PASSIVE;
-            _updateWindowPartner = 0;
-          } else {
-            _state = UPDATE_WINDOW_OPEN;
-          }
+          _state = UPDATE_WINDOW_OPEN;
         }
       break;
 
       case UPDATE_SHAKE_ACKED:
         // reset if it takes too much time
+        if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
+          _state = PASSIVE;
+          _updateWindowPartner = 0;
+          break;
+        }
         if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
-          if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
-            _state = PASSIVE;
-            _updateWindowPartner = 0;
-          } else {
-            _state = UPDATE_WINDOW_OPEN;
-          }
+          _state = UPDATE_WINDOW_OPEN;
         }
       break;
     }
+  // sendDebug("state", _state);
   }
 
   // Heartbeats and DEBUG
-  if (millis() - _lastHeartBeat > 2000) {
+  if (millis() - _lastHeartBeat > 500) {
     // sendDebug("Alive", 1);
     // sendDebug("orientation", _orientation);
-    sendDebug("state", _state);
+    // sendDebug("state", _state, 2);
+    exerternalMonitor("statechange", _state);
     _lastHeartBeat = millis();
     if (_on) {
       digitalWrite(13, 0);
@@ -187,7 +215,7 @@ void loop(){
 
 boolean updateActivated() {
   if (_lastUpdateActivation > 0)
-    return (millis() - _lastUpdateActivation) < UPDATE_WINDOW_DURATION;
+    return (millis() - _lastUpdateActivation) < UPDATE_ACTIVATION_DURATION;
   return false;
 }
 
@@ -223,14 +251,15 @@ void setOrientation() {
 }
 
 boolean checkForBalanceCheck() {
+  if (millis() - _lastBalanceCheck < 2000) return false;
   // Check for continuous peaks in the last 2 seconds. A positive, negative and positive peak
   // mean a shake. Peaks are counted as sign changes.
   int items = 2 * HZ;
   float diffs[items];
 
   int changes = 0;
-  for (int i=1; i<items; i++) {
-    if (_xQueue[HISTORY-i] != _xQueue[HISTORY-i-1])
+  for (int i=0; i<items; i++) {
+    if (_xQueue[i] != _xQueue[i+1])
       changes = changes + 1;
   }
 //  print("changes: ");
@@ -238,6 +267,7 @@ boolean checkForBalanceCheck() {
 //  print(" items: ");
 //  println(items);
   if (changes > 0 && (items / changes < 4)) {
+    _lastBalanceCheck = millis();
     return true;
   } else {
     return false;
@@ -245,32 +275,73 @@ boolean checkForBalanceCheck() {
 }
 
 boolean checkForUpdate() {
-  // Check for one single peak in the last second
-  int items = HZ;
-  int diffs[items];
+  // Check for one single peak in middle of the last second
+  int items = HZ/3;
 
+  // first third
+  for (int i=0; i<items; i++) {
+    if (_xQueue[i] != _xQueue[i+1]) {
+      sendDebug("fail on first", 1, 3);
+      return false;
+    }
+  }
+
+  // middle third
   int changes = 0;
-  for (int i=1; i<items; i++) {
-    if (_xQueue[HISTORY-i] != _xQueue[HISTORY-i-1])
+  for (int i=items; i<2*items; i++) {
+    if (_xQueue[i] != _xQueue[i+1])
       changes = changes + 1;
   }
+  sendDebug("changes", changes, 3);
+  if (changes != 2) return false;
 
-  if (changes == 2) {
-    return true;
-  } else {
-    return false;
+  // last third
+  for (int i=2*items; i<3*items; i++) {
+    if (_xQueue[i] != _xQueue[i+1]) {
+      sendDebug("fail on last", 1, 3);
+      return false;
+    }
   }
+
+  _updateShakeTime = millis();
+  sendDebug("Shake",1, 1);
+  return true;
 }
 
 void doShake() {
+  sendDebug("SHAKE DONE!", 1);
+  int add;
+  if (_orientation == 0) {
+    add = 1;
+  } else {
+    add = -1;
+  }
+  _balance += add;
+  exerternalMonitor("updatebalance", _balance);
+  digitalWrite(13, 1);
+  delay(150);
+  digitalWrite(13, 0);
+  delay(150);
+  digitalWrite(13, 1);
+  delay(150);
+  digitalWrite(13, 0);
   // TODO: update the numbers!
+}
+
+void abort() {
+  sendRequest(_updateWindowPartner, ABORT, 0, 0);
+  _state = PASSIVE;
+  _updateWindowPartner = 0;
+  _updateWindowOpenStart = 0;
+  _updateShakeTime = 0;
+  _updateShakeReceivedTime = 0;
 }
 
 // Helper function to use arrays as deque's
 // push v to array[0] and shift every thing up 1, last items slides of
 void pushQueue(int array[], int size, int v) {
-  for (int i = 0; i < size-1; i++) {
-    array[i+1] = array[i];
+  for (int i = size-1; i > 0; i--) {
+    array[i] = array[i-1];
   }
   array[0] = v;
 
@@ -298,12 +369,15 @@ void pushQueue(int array[], int size, int v) {
 
 
 void execute(unsigned char from, unsigned char operation, unsigned char operand1, int operand2){
-  if (DEBUG){
+  if (DEBUG >= 2){
     Serial.println("----");
-    Serial.print(" from=");
-    Serial.print(from);
-    Serial.print(" operation=");
-    Serial.print(operation);
+    Serial.print(ID);
+    Serial.print("(");
+    Serial.print(_state);
+    Serial.print(") received from ");
+    Serial.print(char(from));
+    Serial.print(": operation=");
+    Serial.print(char(operation));
     Serial.print(" operand1=");
     Serial.print(operand1);
     Serial.print(" operand2=");
@@ -313,14 +387,11 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
   switch (operation) {
     case SYN_UPDATE_WINDOW:
-      if (DEBUG) {
-        Serial.print("SYN_UPDATE_WINDOW; state: ");
-        Serial.println(_state);
-      }
       // If we are in UPDATE_WINDOW_ACTIVATED state as well, we respond
       if (_state == UPDATE_WINDOW_ACTIVATED) {
         // We are ready to do an update, let's see who it is and reply
         sendRequest(from, ACK_UPDATE_WINDOW, '0', '0');
+        _updateWindowPartner = from;
         _state = UPDATE_WINDOW_ACKED;
       }
       // We are either passive, or already in conversation with someone, so
@@ -330,10 +401,6 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case ACK_UPDATE_WINDOW:
       // Someone responds to an SYN_UPDATE_WINDOW request. Are we still
       // in the UPDATE_WINDOW_ACTIVATED state?
-      if (DEBUG) {
-        Serial.print("ACK_UPDATE_WINDOW; state: ");
-        Serial.println(_state);
-      }
 
       if (_state == UPDATE_WINDOW_ACKED || _state == UPDATE_WINDOW_ACTIVATED) {
         // Oke, activation window is open
@@ -346,10 +413,6 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
     case OPEN_UPDATE_WINDOW:
       // Response to ACK_UPDATE_WINDOW, so we should be in UPDATE_WINDOW_ACKED state
-      if (DEBUG) {
-        Serial.print("OPEN_UPDATE_WINDOW; state: ");
-        Serial.println(_state);
-      }
       if (_state != UPDATE_WINDOW_ACKED) return;
       // Window is opened on the other side, open here as well
       _state = UPDATE_WINDOW_OPEN;
@@ -359,24 +422,57 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
     case SYN_UPDATE_SHAKE:
       // window still open?
-      if (_state == UPDATE_WINDOW_OPEN || _state == UPDATE_SHAKE_ACTIVATED) {
+      if (_state == UPDATE_WINDOW_OPEN) {
         // TODO: do we need to check from == _updateWindowPartner?
+        _updateShakeReceivedTime = millis();
+        if (checkForUpdate()) {
+          // we should acknowledge
+          sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
+          _state = UPDATE_SHAKE_ACKED;
+        }
+      } else if(_state == UPDATE_SHAKE_ACTIVATED) {
         sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
         _state = UPDATE_SHAKE_ACKED;
       }
     break;
 
     case ACK_UPDATE_SHAKE:
-      // Was ours within the limit?
-      if (_state == UPDATE_SHAKE_ACTIVATED) {
-        // We both had a shake!
-        // are the orientations different?
-        if (_orientation != operand1) {
-          sendRequest(from, DO_UPDATE, _orientation, 0);
-          doShake();
+      if (_state == UPDATE_SHAKE_ACTIVATED || _state == UPDATE_SHAKE_ACKED) {
+        // Was ours within the limit?
+        if (millis() - _updateShakeTime < UPDATE_SHAKE_DURATION) {
+          // We both had a shake!
+          // are the orientations different?
+          if (_orientation != operand1) {
+            sendRequest(from, DO_UPDATE, _orientation, 0);
+            doShake();
+            // reset state
+            _state = PASSIVE;
+          } else {
+            sendDebug("Orientation the same", 1);
+            abort();
+          }
+        } else {
+          sendDebug("Ack too late", millis() - _updateShakeTime - UPDATE_SHAKE_DURATION);
         }
       }
+    break;
 
+    case DO_UPDATE:
+      if (_state != UPDATE_SHAKE_ACKED) return;
+      doShake();
+      // reset state
+      _state = PASSIVE;
+    break;
+
+    case ABORT:
+      // orientation was the same, or something else happened,
+      // go back to passive
+      _state = PASSIVE;
+      _updateWindowPartner = 0;
+      _updateWindowOpenStart = 0;
+      _updateShakeTime = 0;
+      _updateShakeReceivedTime = 0;
+    break;
   }
 }
 
@@ -514,6 +610,30 @@ void sendDebug(char key[], int value) {
   Serial.print(key);
   Serial.print(":");
   Serial.print(value);
+  Serial.print(":");
+  Serial.print(millis());
   Serial.println(">");
 }
 
+void sendDebug(char key[], int value, int debugLevel) {
+  if (DEBUG < debugLevel) return;
+  Serial.print("<");
+  Serial.print(ID);
+  Serial.print(":");
+  Serial.print(key);
+  Serial.print(":");
+  Serial.print(value);
+  Serial.print(":");
+  Serial.print(millis());
+  Serial.println(">");
+}
+
+void exerternalMonitor(char key[], int value) {
+  Serial.print("<<");
+  Serial.print(ID);
+  Serial.print(":");
+  Serial.print(key);
+  Serial.print(":");
+  Serial.print(value);
+  Serial.println(">>");
+}
