@@ -36,6 +36,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define ACK_UPDATE_SHAKE         'E' // Acknowledge shake sync
 #define DO_UPDATE                'F' // Do the update!
 #define ABORT                    'Z' // Abort window and shake
+#define DEBUG_SET_BALANCE        'S' // Set balance in debugging
 
 // States
 #define PASSIVE                  1
@@ -473,6 +474,10 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       _updateShakeTime = 0;
       _updateShakeReceivedTime = 0;
     break;
+
+    case DEBUG_SET_BALANCE:
+      _balance = operand2 - 5;
+      sendDebug("Balance set to", _balance);
   }
 }
 
