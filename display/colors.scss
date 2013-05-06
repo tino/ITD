@@ -1,0 +1,18 @@
+$startred: rgb(255, 0, 0);
+$startgreen: rgb(0, 255, 0);
+
+div {
+    color: $startred;
+    color: lighten($startred, 10%);
+    color: lighten($startred, 20%);
+    color: lighten($startred, 30%);
+    color: lighten($startred, 40%);
+}
+
+div.green {
+    color: $startgreen;
+    color: lighten($startgreen, 10%);
+    color: lighten($startgreen, 20%);
+    color: lighten($startgreen, 30%);
+    color: lighten($startgreen, 40%);
+}

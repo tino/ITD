@@ -1,0 +1,13 @@
+div {
+  color: red;
+  color: #ff3333;
+  color: #ff6666;
+  color: #ff9999;
+  color: #ffcccc; }
+
+div.green {
+  color: lime;
+  color: #33ff33;
+  color: #66ff66;
+  color: #99ff99;
+  color: #ccffcc; }
