@@ -490,7 +490,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
     case SET_DEBUG_LEVEL:
       DEBUG = operand2;
-      sendDebug("Debug level set to", DEBUG);
+      exerternalMonitor("Debug level set to", DEBUG);
     break;
   }
 }
