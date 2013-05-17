@@ -18,6 +18,7 @@ int DEBUG = 0;
 const int MAGNETIC_PIN = 7;
 const int TILT_PIN_1 = 7;
 const int TILT_PIN_2 = 8;
+const int SWITCH_PIN = 5;
 
 // Times
 const int HZ = 20;
@@ -56,6 +57,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 const int HISTORY = 4 * HZ; // how many datapoints to rememeber (secs * HZ)
 int _xQueue[HISTORY];
 int _yQueue[HISTORY];
+int _switchQueue[HISTORY];
 int _magneticQueue[HISTORY];
 int _pastChanges[HZ/4];
 
@@ -80,6 +82,7 @@ void setup(){
   // Setup pins
   pinMode(TILT_PIN_1, INPUT);
   pinMode(TILT_PIN_2, INPUT);
+  pinMode(SWITCH_PIN, INPUT);
   pinMode(13, OUTPUT);
 
   exerternalMonitor("entrance", ID);
@@ -113,6 +116,7 @@ void loop(){
     int m = analogRead(MAGNETIC_PIN);
     pushQueue(_xQueue, HISTORY, x);
     pushQueue(_yQueue, HISTORY, y);
+    pushQueue(_switchQueue, HISTORY, y);
     pushQueue(_magneticQueue, HISTORY, m);
 
     // Process readings
@@ -285,7 +289,7 @@ boolean checkForUpdate() {
 
   // first third
   for (int i=0; i<items; i++) {
-    if (_xQueue[i] != _xQueue[i+1]) {
+    if (_switchQueue[i] != _switchQueue[i+1]) {
       sendDebug("fail on first", 1, 3);
       return false;
     }
@@ -294,7 +298,7 @@ boolean checkForUpdate() {
   // middle third
   int changes = 0;
   for (int i=items; i<2*items; i++) {
-    if (_xQueue[i] != _xQueue[i+1])
+    if (_switchQueue[i] != _switchQueue[i+1])
       changes = changes + 1;
   }
   sendDebug("changes", changes, 3);
@@ -302,7 +306,7 @@ boolean checkForUpdate() {
 
   // last third
   for (int i=2*items; i<3*items; i++) {
-    if (_xQueue[i] != _xQueue[i+1]) {
+    if (_switchQueue[i] != _switchQueue[i+1]) {
       sendDebug("fail on last", 1, 3);
       return false;
     }
