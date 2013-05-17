@@ -7,9 +7,12 @@
 // Constants and global vars
 // ----------
 
-//enable to show debugging information about parsing and operations
-//not so good on broadcast channels
-const int DEBUG = 0;
+// enable to show debugging information about parsing and operations
+// not so good on broadcast channels. Not a constant so we can switch it live
+// 0 = off
+// 1 = lowest debug level
+// the higher the number, the more verbose the logging becomes
+int DEBUG = 0;
 
 // Pins
 const int MAGNETIC_PIN = 7;
@@ -37,6 +40,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define DO_UPDATE                'F' // Do the update!
 #define ABORT                    'Z' // Abort window and shake
 #define DEBUG_SET_BALANCE        'S' // Set balance in debugging
+#define SET_DEBUG_LEVEL          'T' // Set debug level
 
 // States
 #define PASSIVE                  1
@@ -478,6 +482,12 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case DEBUG_SET_BALANCE:
       _balance = operand2 - 5;
       sendDebug("Balance set to", _balance);
+    break;
+
+    case SET_DEBUG_LEVEL:
+      DEBUG = operand2;
+      sendDebug("Debug level set to", DEBUG);
+    break;
   }
 }
 
