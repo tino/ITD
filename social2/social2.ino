@@ -83,13 +83,9 @@ void setup(){
   pinMode(TILT_PIN_1, INPUT);
   pinMode(TILT_PIN_2, INPUT);
   pinMode(SWITCH_PIN, INPUT);
-  pinMode(13, OUTPUT);
 
   exerternalMonitor("entrance", ID);
-  if (DEBUG) {
-    Serial.print(ID);
-    Serial.println(" has entered the building");
-  }
+  sendDebug("Entered the building", ID);
 
 }
 
@@ -122,7 +118,7 @@ void loop(){
     // Process readings
     setOrientation();
     setUpdateActivation();
-    sendDebug("x", x, 2);
+    // sendDebug("x", x, 3);
 
     checkForUpdate();
 
@@ -137,7 +133,7 @@ void loop(){
           sendRequest('0', SYN_UPDATE_WINDOW, 'x', 'x');
         }
         if (checkForBalanceCheck()) {
-          sendDebug("balance", 1);
+          sendDebug("balance", _balance);
           exerternalMonitor("showbalance", _balance);
           // TODO: LEDS
         }
@@ -209,13 +205,13 @@ void loop(){
     // sendDebug("Alive", 1);
     // sendDebug("orientation", _orientation);
     // sendDebug("state", _state, 2);
-    exerternalMonitor("statechange", _state);
+    // exerternalMonitor("statechange", _state);
     _lastHeartBeat = millis();
     if (_on) {
-      digitalWrite(13, 0);
+      // digitalWrite(13, 0);
       _on = false;
     } else {
-      digitalWrite(13, 1);
+      // digitalWrite(13, 1);
       _on = true;
     }
   }
@@ -271,10 +267,7 @@ boolean checkForBalanceCheck() {
     if (_xQueue[i] != _xQueue[i+1])
       changes = changes + 1;
   }
-//  print("changes: ");
-//  print(changes);
-//  print(" items: ");
-//  println(items);
+
   if (changes > 0 && (items / changes < 4)) {
     _lastBalanceCheck = millis();
     return true;
@@ -290,7 +283,7 @@ boolean checkForUpdate() {
   // first third
   for (int i=0; i<items; i++) {
     if (_switchQueue[i] != _switchQueue[i+1]) {
-      sendDebug("fail on first", 1, 3);
+      // sendDebug("fail on first", 1, 3);
       return false;
     }
   }
@@ -301,19 +294,19 @@ boolean checkForUpdate() {
     if (_switchQueue[i] != _switchQueue[i+1])
       changes = changes + 1;
   }
-  sendDebug("changes", changes, 3);
+  // sendDebug("changes", changes, 3);
   if (changes != 2) return false;
 
   // last third
   for (int i=2*items; i<3*items; i++) {
     if (_switchQueue[i] != _switchQueue[i+1]) {
-      sendDebug("fail on last", 1, 3);
+      // sendDebug("fail on last", 1, 3);
       return false;
     }
   }
 
   _updateShakeTime = millis();
-  sendDebug("Shake",1, 1);
+  sendDebug("Shake", 1, 3);
   return true;
 }
 
@@ -327,14 +320,6 @@ void doShake() {
   }
   _balance += add;
   exerternalMonitor("updatebalance", _balance);
-  digitalWrite(13, 1);
-  delay(150);
-  digitalWrite(13, 0);
-  delay(150);
-  digitalWrite(13, 1);
-  delay(150);
-  digitalWrite(13, 0);
-  // TODO: update the numbers!
 }
 
 void abort() {
@@ -486,6 +471,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case DEBUG_SET_BALANCE:
       _balance = operand2 - 5;
       sendDebug("Balance set to", _balance);
+      exerternalMonitor("Balance set to", _balance);
     break;
 
     case SET_DEBUG_LEVEL:
@@ -532,9 +518,9 @@ void processSerial() {
   char c = Serial.read();
 
   if (DEBUG > 1){
-    digitalWrite(13,HIGH);
+    // digitalWrite(13,HIGH);
     delay(5);
-    digitalWrite(13,LOW);
+    // digitalWrite(13,LOW);
     Serial.print(state);
     Serial.print(" ");
     Serial.println(c);

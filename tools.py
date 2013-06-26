@@ -23,11 +23,8 @@ def send_cmd(to, operation, operand1, operand2):
 
 
 def read():
-    while True:
-        try:
-            print queue.get_nowait()
-        except Queue.Empty:
-            return
+    while not queue.empty():
+        print queue.get_nowait()
 
 
 class SerialFlusher(threading.Thread):
