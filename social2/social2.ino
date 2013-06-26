@@ -82,7 +82,7 @@ unsigned long _updateShakeReceivedTime = 0;
 unsigned long _lastBalanceCheck = 0;
 unsigned long _startOutputTest = 0;
 bool _outputTesting = false;
-
+Timer vibrationTimer;
 
 void setup(){
   // Start up our serial port, we configured our XBEE devices for 57600 bps.
@@ -441,12 +441,16 @@ void showCoinCount() {
 
 // Turn on the vibrator for <milliseconds>
 void vibrateFor(unsigned long milliseconds) {
-
+  vibrateOn();
+  vibrationTimer.runAt(vibrateOff, millis() + milliseconds);
 }
 
-// Update the vibrator
-void updateVibrator() {
+void vibrateOn() {
+  digitalWrite(VIBRATOR_PIN, 1);
+}
 
+void vibrateOff() {
+  digitalWrite(VIBRATOR_PIN, 0);
 }
 
 // Test all outputs.
