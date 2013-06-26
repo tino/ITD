@@ -4,6 +4,7 @@
 
 #include <Firmata.h>
 #include <Tlc5940.h>
+#include <Timer.h>
 
 // Constants and global vars
 // ----------
