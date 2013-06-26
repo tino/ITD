@@ -579,7 +579,7 @@ void processSerial() {
     break;
 
     case 7: //read second byte of second operand
-      operand2 = word(operand2, c);
+      operand2 = word(c, operand2);
       state = 8;
     break;
 
