@@ -438,6 +438,16 @@ void showCoinCount() {
   }
 }
 
+// Turn on the vibrator for <milliseconds>
+void vibrateFor(unsigned long milliseconds) {
+
+}
+
+// Update the vibrator
+void updateVibrator() {
+
+}
+
 // Test all outputs.
 // Set all leds on, and turn on the vibrator when start is true
 // otherwise, check wether they have been on for the last OUTPUT_TEST_DURATION
