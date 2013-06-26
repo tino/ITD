@@ -3,6 +3,7 @@
 // Letters A-Z can be used. 0 is reserved for broadcast
 
 #include <Firmata.h>
+#include <Tlc5940.h>
 
 // Constants and global vars
 // ----------
@@ -18,13 +19,16 @@ int DEBUG = 0;
 const int MAGNETIC_PIN = 7;
 const int TILT_PIN_1 = 7;
 const int TILT_PIN_2 = 8;
-const int SWITCH_PIN = 5;
+const int SWITCH_PIN = 2;
+const int VIBRATOR_PIN = 4;
+
 
 // Times
 const int HZ = 20;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 10 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
+const int OUTPUT_TEST_DURATION = 2 * 1000;
 
 // Thresholds
 const float THRESHOLD = 3.0;
@@ -42,6 +46,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define ABORT                    'Z' // Abort window and shake
 #define DEBUG_SET_BALANCE        'S' // Set balance in debugging
 #define SET_DEBUG_LEVEL          'T' // Set debug level
+#define OUTPUT_TEST              'O' // Turn all outputs on for 2 secs
 
 // States
 #define PASSIVE                  1
@@ -64,6 +69,7 @@ int _pastChanges[HZ/4];
 
 // Global variables
 int _balance = 0;
+int _coinCount = 0;
 int _orientation = 0;
 int _state = PASSIVE;
 int _lastState = PASSIVE;
@@ -73,11 +79,16 @@ unsigned int _updateWindowPartner = 0;
 unsigned long _updateShakeTime = 0;
 unsigned long _updateShakeReceivedTime = 0;
 unsigned long _lastBalanceCheck = 0;
+unsigned long _startOutputTest = 0;
+bool _outputTesting = false;
 
 
 void setup(){
   // Start up our serial port, we configured our XBEE devices for 57600 bps.
   Serial.begin(57600);
+
+  // Setup TLC that drives the LEDS; with all LEDS off
+  Tlc.init(0);
 
   // Setup pins
   pinMode(TILT_PIN_1, INPUT);
@@ -104,6 +115,13 @@ void loop(){
   // }
 
   if (millis() - _lastLoop > 1000/HZ)  {
+
+    // short if we are output testing
+    if (_outputTesting) {
+      outputTest(false);
+      return;
+    }
+
     _lastLoop = millis();
 
     // Update our readings
@@ -135,7 +153,7 @@ void loop(){
         if (checkForBalanceCheck()) {
           sendDebug("balance", _balance);
           exerternalMonitor("showbalance", _balance);
-          // TODO: LEDS
+          showBalance();
         }
       break;
 
@@ -331,6 +349,129 @@ void abort() {
   _updateShakeReceivedTime = 0;
 }
 
+//////////////////////////////////////
+// OUTPUT FUNCTIONS
+//////////////////////////////////////
+
+// Show balance with leds
+void showBalance() {
+  int workingBalance;
+  if (_balance > 4) {
+    workingBalance = 4;
+  } else if (_balance < -4) {
+    workingBalance = -4;
+  } else {
+    workingBalance = _balance;
+  }
+
+  // Red leds are the first four on the tlc (0 - 3)
+  // The green the second four (4 - 7)
+  byte leds;
+  switch (workingBalance) {
+    case -4:
+      leds = B11110000;
+      break;
+    case -3:
+      leds = B01110000;
+      break;
+    case -2:
+      leds = B00110000;
+      break;
+    case -1:
+      leds = B00010000;
+      break;
+    case 0:
+      leds = 0;
+      break;
+    case 1:
+      leds = B00001000;
+      break;
+    case 2:
+      leds = B00001100;
+      break;
+    case 3:
+      leds = B00001110;
+      break;
+    case 4:
+      leds = B00001111;
+      break;
+  }
+  sendDebug("leds array", leds, 2);
+
+  for (byte x=0; x<8; x++) {
+    if (leds & (1 << x)) {
+      // Led should be on
+      Tlc.set(x, 4095);
+    } else {
+      // Led should be off
+      Tlc.set(x, 0);
+    }
+  }
+  Tlc.update();
+}
+
+// Show coin count with the blue leds
+// The coin count leds are 8 - 15
+void showCoinCount() {
+  // in binary   == dec
+  //    B0000001 == 1
+  //    B0000011 == 3
+  //    B0000111 == 7
+  //    B0001111 == 15
+  //    B0011111 == 31
+  //    B0111111 == 127
+  //    B1111111 == 255
+  if (_coinCount > 8)
+    _coinCount = 8
+  if (_coinCount == 0) {
+    leds = B00000000
+  } else {
+    leds = byte(2^_coinCount - 1)
+  }
+  for (byte x=0; x<8; x++) {
+    if (leds & (1 << x)) {
+      // Led should be on
+      Tlc.set(x+8, 4095);
+    } else {
+      Tlc.set(x+8, 4095);
+    }
+  }
+}
+
+// Test all outputs.
+// Set all leds on, and turn on the vibrator when start is true
+// otherwise, check wether they have been on for the last OUTPUT_TEST_DURATION
+// and handle accordingly
+bool outputTest(bool start) {
+
+  if (start) {
+    _startOutputTest = millis();
+    _outputTesting = true;
+    // Leds
+    Tlc.clear();
+    for (int i=0; i < 16; i++) {
+      Tlc.set(i, 4095);
+    }
+    Tlc.update();
+    // Vibrator
+    digitalWrite(VIBRATOR_PIN, 1);
+    return true;
+  } else {
+    if (_outputTesting) {
+      if (_startOutputTest < millis() - OUTPUT_TEST_DURATION) {
+        Tlc.clear();
+        Tlc.update();
+        digitalWrite(VIBRATOR_PIN, 0);
+        _outputTesting = false;
+      }
+    }
+  }
+}
+
+//////////////////////////////////////
+// OUTPUT FUNCTIONS
+//////////////////////////////////////
+
 // Helper function to use arrays as deque's
 // push v to array[0] and shift every thing up 1, last items slides of
 void pushQueue(int array[], int size, int v) {
@@ -341,8 +482,9 @@ void pushQueue(int array[], int size, int v) {
 
 }
 
-
-// Messaging
+//////////////////////////////////////
+// MESSAGING FUNCTIONS
+//////////////////////////////////////
 
 // 01: AF
 // 2: to
@@ -478,6 +620,11 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       DEBUG = operand2;
       exerternalMonitor("Debug level set to", DEBUG);
     break;
+
+    case OUTPUT_TEST:
+      outputTest(true);
+      sendDebug("All outputs high for 2 secs", 1);
+    break;
   }
 }
 
@@ -606,6 +753,9 @@ void processSerial() {
   }
 }
 
+//////////////////////////////////////
+// DEBUG FUNCTIONS
+//////////////////////////////////////
 
 void sendDebug(char key[], int value) {
   if (DEBUG == 0) return;
