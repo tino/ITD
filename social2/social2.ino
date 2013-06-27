@@ -1,4 +1,4 @@
-#define ID 'U'
+#define ID 'V'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 
@@ -17,7 +17,7 @@
 int DEBUG = 0;
 
 // Pins
-const int MAGNETIC_PIN = 7;
+const int MAGNETIC_PIN = 6;
 const int TILT_PIN_1 = 7;
 const int TILT_PIN_2 = 8;
 const int SWITCH_PIN = 2;
@@ -30,6 +30,7 @@ const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 10 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
+const int SHOW_BALANCES_TIME = 2 * 1000;
 
 // Thresholds
 const float THRESHOLD = 3.0;
@@ -82,7 +83,6 @@ unsigned long _updateShakeTime = 0;
 unsigned long _updateShakeReceivedTime = 0;
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
-bool _outputTesting = false;
 SimpleTimer timer;
 
 void setup(){
@@ -99,9 +99,6 @@ void setup(){
 
   exerternalMonitor("entrance", ID);
   sendDebug("Entered the building", ID);
-
-  timer.setTimeout(500, outputTest);
-
 }
 
 // Loop vars
@@ -116,21 +113,16 @@ void loop(){
 
   if (millis() - _lastLoop > 1000/HZ)  {
 
-    // short if we are output testing
-    if (_outputTesting) {
-      outputTest(false);
-      return;
-    }
-
     _lastLoop = millis();
 
     // Update our readings
     int x = digitalRead(TILT_PIN_1);
     int y = digitalRead(TILT_PIN_2);
-    int m = analogRead(MAGNETIC_PIN);
+    int s = digitalRead(SWITCH_PIN);
+    int m = digitalRead(MAGNETIC_PIN);
     pushQueue(_xQueue, HISTORY, x);
     pushQueue(_yQueue, HISTORY, y);
-    pushQueue(_switchQueue, HISTORY, y);
+    pushQueue(_switchQueue, HISTORY, s);
     pushQueue(_magneticQueue, HISTORY, m);
 
     // Process readings
@@ -147,7 +139,7 @@ void loop(){
           _state = UPDATE_WINDOW_ACTIVATED;
           sendRequest('0', SYN_UPDATE_WINDOW, 'x', 'x');
         }
-        if (checkShowBalance()) {
+        if (isShowBalance()) {
           sendDebug("balance", _balance);
           sendDebug("coinCount", _coinCount);
           // exerternalMonitor("showbalance", _balance);
@@ -175,7 +167,7 @@ void loop(){
         }
 
         // Check for an update shake
-        if (checkUpdateShake()) {
+        if (isUpdateShake()) {
           if (millis() - _updateShakeReceivedTime < UPDATE_SHAKE_DURATION) {
             // If we have received a SYN_UPDATE_SHAKE within UPDATE_SHAKE_DURATION
             // we should acknowledge
@@ -219,7 +211,7 @@ void loop(){
   // Heartbeats and DEBUG
   if (millis() - _lastHeartBeat > 500) {
     // sendDebug("Alive", 1);
-    // sendDebug("orientation", _orientation);
+    sendDebug("orientation", _orientation);
     // sendDebug("state", _state, 2);
     // exerternalMonitor("statechange", _state);
     _lastHeartBeat = millis();
@@ -258,20 +250,35 @@ void setOrientation() {
   // 0 / 0 is palm down
   // 1 / 1 is palm down, sorta... :)
   // average over the half second
+  // int sum = 0;
+  // for (int i=1; i < HZ/2 + 1 ; i++) {
+  //   if (_xQueue[i] == _yQueue[i]) {
+  //     sum = sum + _xQueue[i];
+  //   }
+  // }
+  // if ((sum / float(HZ/2)) > 0.8) {
+  //   _orientation = 1;
+  // } else if ((sum / float(HZ/2)) < 0.1) {
+  //   _orientation = 0;
+  // } // else don't change
+
+  // With swithpin
+  // off is palm down, on is palm up
+  // average over half a second
   int sum = 0;
   for (int i=1; i < HZ/2 + 1 ; i++) {
-    if (_xQueue[i] == _yQueue[i]) {
-      sum = sum + _xQueue[i];
+    if (_switchQueue[i] == _switchQueue[i+1]) {
+      sum = sum + _switchQueue[i];
     }
   }
-  if ((sum / float(HZ/2)) > 0.8) {
+  if ((sum / float(HZ/2)) > 0.9) {
     _orientation = 1;
   } else if ((sum / float(HZ/2)) < 0.1) {
     _orientation = 0;
   } // else don't change
 }
 
-boolean checkShowBalance() {
+boolean isShowBalance() {
   if (millis() - _lastShowBalance < 2000) return false;
   // Check for continuous peaks in the last 2 seconds. A positive, negative and positive peak
   // mean a shake. Peaks are counted as sign changes.
@@ -292,7 +299,7 @@ boolean checkShowBalance() {
   }
 }
 
-boolean checkUpdateShake() {
+boolean isUpdateShake() {
   // Check for one single peak in middle of the last second
   int items = HZ/3;
 
@@ -336,6 +343,8 @@ void doShake() {
   }
   _balance += add;
   exerternalMonitor("updatebalance", _balance);
+  showBalance();
+  vibrateFor(1000);
 }
 
 void abort() {
@@ -394,10 +403,8 @@ void showBalance() {
       leds = B00001111;
       break;
   }
-  sendDebug("leds array", leds, 2);
-
   updateLeds(leds);
-  timer.setTimeout(2 * 1000, balanceOff);
+  timer.setTimeout(SHOW_BALANCES_TIME, balanceOff);
 }
 
 void balanceOff() {
@@ -421,12 +428,12 @@ void showCoinCount() {
     _coinCount = 8;
   if (_coinCount > 0) {
     int leds_int = 1;
+    // 2 to the power of _coinCount
     for (int i=0; i < _coinCount; i++) leds_int = leds_int * 2;
-    sendDebug("leds in int", leds_int - 1);
     leds = byte(leds_int - 1);
   }
   updateLeds(leds, 8);
-  timer.setTimeout(2 * 1000, coinCountOff);
+  timer.setTimeout(SHOW_BALANCES_TIME, coinCountOff);
 }
 
 void coinCountOff() {
@@ -474,36 +481,16 @@ void vibrateOff() {
 }
 
 // Test all outputs.
-// Set all leds on, and turn on the vibrator when start is true
-// otherwise, check wether they have been on for the last OUTPUT_TEST_DURATION
-// and handle accordingly
+// Set all leds on, and turn on the vibrator
 void outputTest() {
-  outputTest(true);
-}
-bool outputTest(bool start) {
+  byte leds = B1111111;
+  updateLeds(leds);
+  leds = B1111111;
+  updateLeds(leds, 8);
+  vibrateOn();
 
-  if (start) {
-    _startOutputTest = millis();
-    _outputTesting = true;
-    // Leds
-    Tlc.clear();
-    for (int i=0; i < 16; i++) {
-      Tlc.set(i, 4095);
-    }
-    Tlc.update();
-    // Vibrator
-    digitalWrite(VIBRATOR_PIN, 1);
-    return true;
-  } else {
-    if (_outputTesting) {
-      if (_startOutputTest < millis() - OUTPUT_TEST_DURATION) {
-        Tlc.clear();
-        Tlc.update();
-        digitalWrite(VIBRATOR_PIN, 0);
-        _outputTesting = false;
-      }
-    }
-  }
+  timer.setTimeout(OUTPUT_TEST_DURATION, allLedsOff);
+  timer.setTimeout(OUTPUT_TEST_DURATION, vibrateOff);
 }
 
 //////////////////////////////////////
@@ -599,7 +586,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       if (_state == UPDATE_WINDOW_OPEN) {
         // TODO: do we need to check from == _updateWindowPartner?
         _updateShakeReceivedTime = millis();
-        if (checkUpdateShake()) {
+        if (isUpdateShake()) {
           // we should acknowledge
           sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
           _state = UPDATE_SHAKE_ACKED;
@@ -668,7 +655,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     break;
 
     case OUTPUT_TEST:
-      outputTest(true);
+      outputTest();
       sendDebug("All outputs high for 2 secs", 1);
     break;
   }
