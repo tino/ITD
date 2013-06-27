@@ -12,8 +12,6 @@ def get_first_port():
         if resource.startswith('tty.usb'):
             return '/dev/%s' % resource
 
-connection = serial.Serial(get_first_port(), 57600)
-
 
 def send_cmd(to, operation, operand1, operand2):
     operand2_str = "%s%s" % util.to_two_bytes(operand2)
@@ -63,7 +61,13 @@ class SerialFlusher(threading.Thread):
         self.running = False
 
 
-queue = Queue.Queue()
+def init():
+    global connection, queue, sf
+    connection = serial.Serial(get_first_port(), 57600)
+    queue = Queue.Queue()
 
-sf = SerialFlusher(connection, queue)
-sf.start()
+    sf = SerialFlusher(connection, queue)
+    sf.start()
+    return connection, queue, sf
+
+connection, queue, sf = init()
