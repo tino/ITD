@@ -4,7 +4,7 @@
 
 #include <Firmata.h>
 #include <Tlc5940.h>
-#include <Timer.h>
+#include <SimpleTimer.h>
 
 // Constants and global vars
 // ----------
@@ -45,8 +45,9 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define ACK_UPDATE_SHAKE         'E' // Acknowledge shake sync
 #define DO_UPDATE                'F' // Do the update!
 #define ABORT                    'Z' // Abort window and shake
-#define DEBUG_SET_BALANCE        'S' // Set balance in debugging
+#define SET_BALANCE              'S' // Set balance in debugging
 #define SET_DEBUG_LEVEL          'T' // Set debug level
+#define SET_COIN_COUNT           'U' // Set coin count
 #define OUTPUT_TEST              'O' // Turn all outputs on for 2 secs
 
 // States
@@ -79,10 +80,10 @@ unsigned long _updateWindowOpenStart = 0;
 unsigned int _updateWindowPartner = 0;
 unsigned long _updateShakeTime = 0;
 unsigned long _updateShakeReceivedTime = 0;
-unsigned long _lastBalanceCheck = 0;
+unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
 bool _outputTesting = false;
-Timer vibrationTimer;
+SimpleTimer timer;
 
 void setup(){
   // Start up our serial port, we configured our XBEE devices for 57600 bps.
@@ -99,6 +100,8 @@ void setup(){
   exerternalMonitor("entrance", ID);
   sendDebug("Entered the building", ID);
 
+  timer.setTimeout(500, outputTest);
+
 }
 
 // Loop vars
@@ -109,11 +112,7 @@ void loop(){
   static boolean _on = false;
 
   processSerial();
-
-  // if (_lastState != _state) {
-  //   exerternalMonitor("statechange", _state);
-  //   _lastState = _state;
-  // }
+  timer.run();
 
   if (millis() - _lastLoop > 1000/HZ)  {
 
@@ -137,9 +136,6 @@ void loop(){
     // Process readings
     setOrientation();
     setUpdateActivation();
-    // sendDebug("x", x, 3);
-
-    checkForUpdate();
 
     // Act according to state
     switch (_state) {
@@ -151,10 +147,12 @@ void loop(){
           _state = UPDATE_WINDOW_ACTIVATED;
           sendRequest('0', SYN_UPDATE_WINDOW, 'x', 'x');
         }
-        if (checkForBalanceCheck()) {
+        if (checkShowBalance()) {
           sendDebug("balance", _balance);
-          exerternalMonitor("showbalance", _balance);
+          sendDebug("coinCount", _coinCount);
+          // exerternalMonitor("showbalance", _balance);
           showBalance();
+          showCoinCount();
         }
       break;
 
@@ -177,7 +175,7 @@ void loop(){
         }
 
         // Check for an update shake
-        if (checkForUpdate()) {
+        if (checkUpdateShake()) {
           if (millis() - _updateShakeReceivedTime < UPDATE_SHAKE_DURATION) {
             // If we have received a SYN_UPDATE_SHAKE within UPDATE_SHAKE_DURATION
             // we should acknowledge
@@ -216,7 +214,6 @@ void loop(){
         }
       break;
     }
-  // sendDebug("state", _state);
   }
 
   // Heartbeats and DEBUG
@@ -274,8 +271,8 @@ void setOrientation() {
   } // else don't change
 }
 
-boolean checkForBalanceCheck() {
-  if (millis() - _lastBalanceCheck < 2000) return false;
+boolean checkShowBalance() {
+  if (millis() - _lastShowBalance < 2000) return false;
   // Check for continuous peaks in the last 2 seconds. A positive, negative and positive peak
   // mean a shake. Peaks are counted as sign changes.
   int items = 2 * HZ;
@@ -288,14 +285,14 @@ boolean checkForBalanceCheck() {
   }
 
   if (changes > 0 && (items / changes < 4)) {
-    _lastBalanceCheck = millis();
+    _lastShowBalance = millis();
     return true;
   } else {
     return false;
   }
 }
 
-boolean checkForUpdate() {
+boolean checkUpdateShake() {
   // Check for one single peak in middle of the last second
   int items = HZ/3;
 
@@ -399,16 +396,13 @@ void showBalance() {
   }
   sendDebug("leds array", leds, 2);
 
-  for (byte x=0; x<8; x++) {
-    if (leds & (1 << x)) {
-      // Led should be on
-      Tlc.set(x, 4095);
-    } else {
-      // Led should be off
-      Tlc.set(x, 0);
-    }
-  }
-  Tlc.update();
+  updateLeds(leds);
+  timer.setTimeout(2 * 1000, balanceOff);
+}
+
+void balanceOff() {
+  byte leds = B00000000;
+  updateLeds(leds);
 }
 
 // Show coin count with the blue leds
@@ -422,27 +416,53 @@ void showCoinCount() {
   //    B0011111 == 31
   //    B0111111 == 127
   //    B1111111 == 255
+  byte leds = B00000000;
   if (_coinCount > 8)
-    _coinCount = 8
-  if (_coinCount == 0) {
-    leds = B00000000
-  } else {
-    leds = byte(2^_coinCount - 1)
+    _coinCount = 8;
+  if (_coinCount > 0) {
+    int leds_int = 1;
+    for (int i=0; i < _coinCount; i++) leds_int = leds_int * 2;
+    sendDebug("leds in int", leds_int - 1);
+    leds = byte(leds_int - 1);
   }
+  updateLeds(leds, 8);
+  timer.setTimeout(2 * 1000, coinCountOff);
+}
+
+void coinCountOff() {
+  byte leds = B00000000;
+  updateLeds(leds, 8);
+}
+
+// turn on the leds indicated by 1's in the 8-bit leds byte
+// to turn on leds higher than 7, give in startAt = 8
+void updateLeds(byte leds) {
+  updateLeds(leds, 0);
+}
+void updateLeds(byte leds, int startAt) {
+  sendDebug("updateLeds", leds);
   for (byte x=0; x<8; x++) {
     if (leds & (1 << x)) {
+      sendDebug("Turning on led", x + startAt);
       // Led should be on
-      Tlc.set(x+8, 4095);
+      Tlc.set(x + startAt, 4095);
     } else {
-      Tlc.set(x+8, 4095);
+      sendDebug("Turning off led", x + startAt);
+      Tlc.set(x + startAt, 0);
     }
   }
+  Tlc.update();
+}
+
+void allLedsOff() {
+  coinCountOff();
+  balanceOff();
 }
 
 // Turn on the vibrator for <milliseconds>
 void vibrateFor(unsigned long milliseconds) {
   vibrateOn();
-  vibrationTimer.runAt(vibrateOff, millis() + milliseconds);
+  timer.setTimeout(milliseconds, vibrateOff);
 }
 
 void vibrateOn() {
@@ -457,6 +477,9 @@ void vibrateOff() {
 // Set all leds on, and turn on the vibrator when start is true
 // otherwise, check wether they have been on for the last OUTPUT_TEST_DURATION
 // and handle accordingly
+void outputTest() {
+  outputTest(true);
+}
 bool outputTest(bool start) {
 
   if (start) {
@@ -484,7 +507,7 @@ bool outputTest(bool start) {
 }
 
 //////////////////////////////////////
-// OUTPUT FUNCTIONS
+// HELPER FUNCTIONS
 //////////////////////////////////////
 
 // Helper function to use arrays as deque's
@@ -576,7 +599,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       if (_state == UPDATE_WINDOW_OPEN) {
         // TODO: do we need to check from == _updateWindowPartner?
         _updateShakeReceivedTime = millis();
-        if (checkForUpdate()) {
+        if (checkUpdateShake()) {
           // we should acknowledge
           sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
           _state = UPDATE_SHAKE_ACKED;
@@ -625,8 +648,9 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       _updateShakeReceivedTime = 0;
     break;
 
-    case DEBUG_SET_BALANCE:
+    case SET_BALANCE:
       _balance = operand2 - 5;
+      showBalance();
       sendDebug("Balance set to", _balance);
       exerternalMonitor("Balance set to", _balance);
     break;
@@ -634,6 +658,13 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case SET_DEBUG_LEVEL:
       DEBUG = operand2;
       exerternalMonitor("Debug level set to", DEBUG);
+    break;
+
+    case SET_COIN_COUNT:
+      _coinCount = operand2;
+      showCoinCount();
+      sendDebug("CoinCount set to", _coinCount);
+      exerternalMonitor("CoinCount set to", _coinCount);
     break;
 
     case OUTPUT_TEST:
