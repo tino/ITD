@@ -23,7 +23,6 @@ const int TILT_PIN_2 = 8;
 const int SWITCH_PIN = 2;
 const int VIBRATOR_PIN = 4;
 
-
 // Times
 const int HZ = 20;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
@@ -60,15 +59,12 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define UPDATE_SHAKE_ACKED       6
 #define UPDATE_DONE              7
 
-
 // Deque's (see bottom for push methods)
 const int HISTORY = 4 * HZ; // how many datapoints to rememeber (secs * HZ)
 int _xQueue[HISTORY];
 int _yQueue[HISTORY];
 int _switchQueue[HISTORY];
 int _magneticQueue[HISTORY];
-int _pastChanges[HZ/4];
-
 
 // Global variables
 int _balance = 0;
@@ -84,6 +80,7 @@ unsigned long _updateShakeReceivedTime = 0;
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
 SimpleTimer timer;
+
 
 void setup(){
   // Start up our serial port, we configured our XBEE devices for 57600 bps.
@@ -101,7 +98,6 @@ void setup(){
   sendDebug("Entered the building", ID);
 }
 
-// Loop vars
 
 void loop(){
   static unsigned long _lastHeartBeat = 0;
@@ -225,6 +221,9 @@ void loop(){
   }
 }
 
+//////////////////////////////////////
+// ACTION FUNCTIONS
+//////////////////////////////////////
 
 boolean updateActivated() {
   if (_lastUpdateActivation > 0)
