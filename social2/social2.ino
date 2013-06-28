@@ -98,6 +98,10 @@ void setup(){
 
   exerternalMonitor("entrance", ID);
   sendDebug("Entered the building", ID);
+
+  allLedsOn();
+  delay(100);
+  allLedsOff();
 }
 
 
@@ -462,6 +466,12 @@ void updateLeds(byte leds, int startAt) {
   Tlc.update();
 }
 
+void allLedsOn() {
+  byte leds = B11111111;
+  updateLeds(leds);
+  leds = B11111111;
+  updateLeds(leds, 8);
+}
 void allLedsOff() {
   coinCountOff();
   balanceOff();
@@ -484,10 +494,7 @@ void vibrateOff() {
 // Test all outputs.
 // Set all leds on, and turn on the vibrator
 void outputTest() {
-  byte leds = B1111111;
-  updateLeds(leds);
-  leds = B1111111;
-  updateLeds(leds, 8);
+  allLedsOn();
   vibrateOn();
 
   timer.setTimeout(OUTPUT_TEST_DURATION, allLedsOff);
