@@ -22,8 +22,8 @@ int DEBUG = 0;
 const int MAGNETIC_PIN = 6;
 const int TILT_PIN_1 = 7;
 const int TILT_PIN_2 = 8;
-const int SWITCH_PIN = 2;
-const int VIBRATOR_PIN = 4;
+const int SWITCH_PIN = 4;
+const int VIBRATOR_PIN = 2;
 
 // Times
 const int HZ = 20;
