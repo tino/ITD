@@ -14,6 +14,8 @@
 // 0 = off
 // 1 = lowest debug level
 // the higher the number, the more verbose the logging becomes
+// double digit debug levels can be used for specific types, so setting debug
+// to 23 will show everything of level 1 + everything 21 - 23
 int DEBUG = 0;
 
 // Pins
@@ -803,7 +805,22 @@ void sendDebug(char key[], int value) {
 }
 
 void sendDebug(char key[], int value, int debugLevel) {
-  if (DEBUG < debugLevel) return;
+  if (DEBUG > 10) {
+    int DEBUG_STREAM = DEBUG / 10;
+    int DEBUG_LEVEL = DEBUG % 10;
+  } else {
+    int DEBUG_STREAM = 0;
+    int DEBUG_LEVEL = 0;
+  }
+
+  if (debugLevel > 10) {
+    int debugStream = debugLevel / 10;
+    debugLevel = debugLevel % 10;
+  } else {
+    int debugStream = 0;
+  }
+  if (debugLevel > DEBUG_LEVEL) return;
+  if (debugStream != DEBUG_STREAM) return;
   Serial.print("<");
   Serial.print(ID);
   Serial.print(":");
