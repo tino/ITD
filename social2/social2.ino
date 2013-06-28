@@ -16,7 +16,7 @@
 // the higher the number, the more verbose the logging becomes
 // double digit debug levels can be used for specific types, so setting debug
 // to 23 will show everything of level 1 + everything 21 - 23
-int DEBUG = 0;
+int DEBUG = 1;
 
 // Pins
 const int MAGNETIC_PIN = 6;
@@ -211,10 +211,10 @@ void loop(){
   }
 
   // Heartbeats and DEBUG
-  if (millis() - _lastHeartBeat > 500) {
-    // sendDebug("Alive", 1);
-    sendDebug("orientation", _orientation);
-    // sendDebug("state", _state, 2);
+  if (millis() - _lastHeartBeat > 1000) {
+    sendDebug("Alive", 1);
+    sendDebug("orientation", _orientation, 11);
+    sendDebug("state", _state, 21);
     // exerternalMonitor("statechange", _state);
     _lastHeartBeat = millis();
     if (_on) {
@@ -705,15 +705,6 @@ void processSerial() {
 
   char c = Serial.read();
 
-  if (DEBUG > 1){
-    // digitalWrite(13,HIGH);
-    delay(5);
-    // digitalWrite(13,LOW);
-    Serial.print(state);
-    Serial.print(" ");
-    Serial.println(c);
-  }
-
   switch(state) {
 
     case 0:
@@ -812,20 +803,20 @@ void sendDebug(char key[], int value) {
 }
 
 void sendDebug(char key[], int value, int debugLevel) {
+  int DEBUG_STREAM = 0;
+  int DEBUG_LEVEL = 0;
+  int debugStream = 0;
+
   if (DEBUG > 10) {
-    int DEBUG_STREAM = DEBUG / 10;
-    int DEBUG_LEVEL = DEBUG % 10;
-  } else {
-    int DEBUG_STREAM = 0;
-    int DEBUG_LEVEL = 0;
+    DEBUG_STREAM = DEBUG / 10;
+    DEBUG_LEVEL = DEBUG % 10;
   }
 
   if (debugLevel > 10) {
     int debugStream = debugLevel / 10;
     debugLevel = debugLevel % 10;
-  } else {
-    int debugStream = 0;
   }
+
   if (debugLevel > DEBUG_LEVEL) return;
   if (debugStream != DEBUG_STREAM) return;
   Serial.print("<");
