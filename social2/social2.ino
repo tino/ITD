@@ -81,6 +81,7 @@ unsigned long _updateShakeTime = 0;
 unsigned long _updateShakeReceivedTime = 0;
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
+boolean _outputBlocked = false;
 SimpleTimer timer;
 
 
@@ -112,7 +113,9 @@ void loop(){
   processSerial();
   timer.run();
 
-  if (millis() - _lastLoop > 1000/HZ)  {
+  // Main processing loop. Should only run if we are not outputting things to
+  // the user, and only HZ times per second.
+  if (!_outputBlocked && millis() - _lastLoop > 1000/HZ)  {
 
     _lastLoop = millis();
 
@@ -209,6 +212,7 @@ void loop(){
     }
   }
 
+  // If state changed in the processing above, let the external monitor know
   if (_state != _lastState) {
     exerternalMonitor("statechange", _state);
     _lastState = _state;
@@ -222,6 +226,8 @@ void loop(){
     sendDebug("Alive", 1, 11);
     sendDebug("orientation", _orientation, 41);
     sendDebug("state", _state, 21);
+
+    lightHeartBeat();
 
   }
 }
@@ -366,6 +372,8 @@ void abort() {
 
 // Show balance with leds
 void showBalance() {
+  _outputBlocked = true;
+
   int workingBalance;
   if (_balance > 4) {
     workingBalance = 4;
@@ -414,11 +422,13 @@ void showBalance() {
 void balanceOff() {
   byte leds = B00000000;
   updateLeds(leds);
+  _outputBlocked = false;
 }
 
 // Show coin count with the blue leds
 // The coin count leds are 8 - 15
 void showCoinCount() {
+  _outputBlocked = true;
   // in binary   == dec
   //    B0000001 == 1
   //    B0000011 == 3
@@ -443,6 +453,7 @@ void showCoinCount() {
 void coinCountOff() {
   byte leds = B00000000;
   updateLeds(leds, 8);
+  _outputBlocked = false;
 }
 
 // turn on the leds indicated by 1's in the 8-bit leds byte
@@ -474,6 +485,7 @@ void allLedsOn() {
 void allLedsOff() {
   coinCountOff();
   balanceOff();
+  _outputBlocked = false;
 }
 
 // Turn on the vibrator for <milliseconds>
@@ -493,6 +505,7 @@ void vibrateOff() {
 // Test all outputs.
 // Set all leds on, and turn on the vibrator
 void outputTest() {
+  _outputBlocked = true;
   allLedsOn();
   vibrateOn();
 
@@ -787,6 +800,20 @@ void processSerial() {
 //////////////////////////////////////
 // DEBUG FUNCTIONS
 //////////////////////////////////////
+
+void lightHeartBeat() {
+  // Only show heartbeat led if output is not blocked
+  if (!_outputBlocked) {
+    updateLeds(B00011000);
+    timer.setTimeout(100, dimHeartBeat);
+  }
+}
+
+void dimHeartBeat() {
+  if (!_outputBlocked) {
+    updateLeds(B00000000);
+  }
+}
 
 void sendDebug(char key[], int value, int debugLevel) {
   int DEBUG_STREAM = 0;
