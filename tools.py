@@ -20,9 +20,14 @@ def send_cmd(to, operation, operand1, operand2):
     return connection.write(string)
 
 
-def read():
+def read(listen_to=None):
     while not queue.empty():
-        print queue.get_nowait()
+        if listen_to == None:
+            print queue.get_nowait()
+        else:
+            msg = queue.get_nowait()
+            if msg[1:2] in listen_to or msg[2:3] in listen_to:
+                print msg
 
 
 class SerialFlusher(threading.Thread):

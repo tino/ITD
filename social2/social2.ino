@@ -108,7 +108,6 @@ void setup(){
 void loop(){
   static unsigned long _lastHeartBeat = 0;
   static unsigned long _lastLoop = 0;
-  static boolean _on = false;
 
   processSerial();
   timer.run();
@@ -210,20 +209,20 @@ void loop(){
     }
   }
 
+  if (_state != _lastState) {
+    exerternalMonitor("statechange", _state);
+    _lastState = _state;
+  }
+
   // Heartbeats and DEBUG
   if (millis() - _lastHeartBeat > 1000) {
-    sendDebug("Alive", 1);
-    sendDebug("orientation", _orientation, 11);
-    sendDebug("state", _state, 21);
-    // exerternalMonitor("statechange", _state);
     _lastHeartBeat = millis();
-    if (_on) {
-      // digitalWrite(13, 0);
-      _on = false;
-    } else {
-      // digitalWrite(13, 1);
-      _on = true;
-    }
+
+    sendDebug("magnet", digitalRead(MAGNETIC_PIN), 31);
+    sendDebug("Alive", 1, 11);
+    sendDebug("orientation", _orientation, 41);
+    sendDebug("state", _state, 21);
+
   }
 }
 
@@ -789,6 +788,36 @@ void processSerial() {
 // DEBUG FUNCTIONS
 //////////////////////////////////////
 
+void sendDebug(char key[], int value, int debugLevel) {
+  int DEBUG_STREAM = 0;
+  int DEBUG_LEVEL = 0;
+  int debugStream = 0;
+
+  if (DEBUG > 10) {
+    DEBUG_STREAM = DEBUG / 10;
+    DEBUG_LEVEL = DEBUG % 10;
+  }
+
+  if (debugLevel > 10) {
+    debugStream = debugLevel / 10;
+    debugLevel = debugLevel % 10;
+  }
+
+  if (debugLevel > DEBUG_LEVEL) return;
+  if (debugStream == 0 || debugStream == DEBUG_STREAM) {
+    Serial.print("<");
+    Serial.print(ID);
+    Serial.print(":");
+    Serial.print(key);
+    Serial.print(":");
+    Serial.print(value);
+    Serial.print(":");
+    Serial.print(millis());
+    Serial.println(">");
+  }
+}
+
+// Debug with level 1
 void sendDebug(char key[], int value) {
   if (DEBUG == 0) return;
   Serial.print("<");
@@ -802,33 +831,6 @@ void sendDebug(char key[], int value) {
   Serial.println(">");
 }
 
-void sendDebug(char key[], int value, int debugLevel) {
-  int DEBUG_STREAM = 0;
-  int DEBUG_LEVEL = 0;
-  int debugStream = 0;
-
-  if (DEBUG > 10) {
-    DEBUG_STREAM = DEBUG / 10;
-    DEBUG_LEVEL = DEBUG % 10;
-  }
-
-  if (debugLevel > 10) {
-    int debugStream = debugLevel / 10;
-    debugLevel = debugLevel % 10;
-  }
-
-  if (debugLevel > DEBUG_LEVEL) return;
-  if (debugStream != DEBUG_STREAM) return;
-  Serial.print("<");
-  Serial.print(ID);
-  Serial.print(":");
-  Serial.print(key);
-  Serial.print(":");
-  Serial.print(value);
-  Serial.print(":");
-  Serial.print(millis());
-  Serial.println(">");
-}
 
 void exerternalMonitor(char key[], int value) {
   Serial.print("<<");
