@@ -1,4 +1,4 @@
-#define ID 'V'
+#define ID 'A'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 
@@ -16,7 +16,7 @@
 // the higher the number, the more verbose the logging becomes
 // double digit debug levels can be used for specific types, so setting debug
 // to 23 will show everything of level 1 + everything 21 - 23
-int DEBUG = 1;
+int DEBUG = 1;  // FIXME: devices behave erronous when starting with DEBUG = 0...
 
 // Pins
 const int MAGNETIC_PIN = 6;
@@ -47,7 +47,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define ACK_UPDATE_SHAKE         'E' // Acknowledge shake sync
 #define DO_UPDATE                'F' // Do the update!
 #define ABORT                    'Z' // Abort window and shake
-#define SET_BALANCE              'S' // Set balance in debugging
+#define SET_BALANCE              'S' // Set balance
 #define SET_DEBUG_LEVEL          'T' // Set debug level
 #define SET_COIN_COUNT           'U' // Set coin count
 #define OUTPUT_TEST              'O' // Turn all outputs on for 2 secs
