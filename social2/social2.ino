@@ -28,10 +28,12 @@ const int VIBRATOR_PIN = 2;
 // Times
 const int HZ = 20;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
-const int UPDATE_WINDOW_DURATION = 10 * 1000;
+const int UPDATE_WINDOW_DURATION = 5 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
 const int SHOW_BALANCES_TIME = 2 * 1000;
+const int START_UPDATE_WINDOW_FLASH_DURATION = 500;
+
 
 // Thresholds
 const float THRESHOLD = 3.0;
@@ -75,10 +77,14 @@ int _orientation = 0;
 int _state = PASSIVE;
 int _lastState = PASSIVE;
 unsigned long _lastUpdateActivation = 0;
+
+// Update window global vars
+char _updateWindowPartner = '0';
 unsigned long _updateWindowOpenStart = 0;
-unsigned int _updateWindowPartner = 0;
-unsigned long _updateShakeTime = 0;
-unsigned long _updateShakeReceivedTime = 0;
+int _updateWindowFlashTimer = -1;
+int _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
+float _updateWindowFlashDurationDivider = 0.9;
+
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
 boolean _outputBlocked = false;
@@ -160,13 +166,13 @@ void loop(){
       case UPDATE_WINDOW_ACKED:
         // if updateActivation is over reset state and we havent' moved to
         // OPEN_UPDATE_WINDOW in the mean time, reset
-        if (!updateActivated()) abort();
+        if (!updateActivated()) closeUpdateWindow();
       break;
 
       case UPDATE_WINDOW_OPEN:
         // If the time window has closed, reset state to PASSIVE
         if (millis() - _updateWindowOpenStart > UPDATE_WINDOW_DURATION) {
-          abort();
+          closeUpdateWindow();
           break;
         }
 
@@ -357,13 +363,24 @@ void doShake() {
   vibrateFor(1000);
 }
 
-void abort() {
-  sendRequest(_updateWindowPartner, ABORT, 0, 0);
+void openUpdateWindow(char with) {
+  _state = UPDATE_WINDOW_OPEN;
+  _updateWindowPartner = with;
+  _updateWindowOpenStart = millis();
+  _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
+  updateWindowFlash();
+  _outputBlocked = true;
+}
+
+void closeUpdateWindow() {
   _state = PASSIVE;
   _updateWindowPartner = 0;
   _updateWindowOpenStart = 0;
-  _updateShakeTime = 0;
-  _updateShakeReceivedTime = 0;
+  timer.deleteTimer(_updateWindowFlashTimer);
+  _updateWindowFlashTimer = -1;
+  _lastShakeTime = 0;
+  _synUpdateShakeReceivedTime = 0;
+  _outputBlocked = false;
 }
 
 //////////////////////////////////////
@@ -454,6 +471,22 @@ void coinCountOff() {
   byte leds = B00000000;
   updateLeds(leds, 8);
   _outputBlocked = false;
+}
+
+void updateWindowFlash() {
+  byte leds = B00011000;
+  updateLeds(leds);
+  _updateWindowFlashTimer = timer.setTimeout(_updateWindowFlashDuration, updateWindowFlashOff);
+  _updateWindowFlashDuration = _updateWindowFlashDuration * _updateWindowFlashDurationDivider;
+}
+
+void updateWindowFlashOff() {
+  byte leds = B00000000;
+  updateLeds(leds);
+  if (millis() +  2 * _updateWindowFlashDuration < _updateWindowOpenStart + UPDATE_WINDOW_DURATION) {
+    // only continue if there is enough time
+    _updateWindowFlashTimer = timer.setTimeout(_updateWindowFlashDuration, updateWindowFlash);
+  }
 }
 
 // turn on the leds indicated by 1's in the 8-bit leds byte
@@ -548,7 +581,7 @@ void pushQueue(int array[], int size, int v) {
 // 6: primary res LSB
 // 78: RS
 
-
+// Process the incomming message
 void execute(unsigned char from, unsigned char operation, unsigned char operand1, int operand2){
   if (DEBUG >= 2){
     Serial.println("----");
@@ -586,9 +619,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       if (_state == UPDATE_WINDOW_ACKED || _state == UPDATE_WINDOW_ACTIVATED) {
         // Oke, activation window is open
         sendRequest(from, OPEN_UPDATE_WINDOW, '0', '0');
-        _state = UPDATE_WINDOW_OPEN;
-        _updateWindowPartner = from;
-        _updateWindowOpenStart = millis();
+        openUpdateWindow(from);
       }
     break;
 
@@ -596,9 +627,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       // Response to ACK_UPDATE_WINDOW, so we should be in UPDATE_WINDOW_ACKED state
       if (_state != UPDATE_WINDOW_ACKED) return;
       // Window is opened on the other side, open here as well
-      _state = UPDATE_WINDOW_OPEN;
-      _updateWindowPartner = from;
-      _updateWindowOpenStart = millis();
+      openUpdateWindow(_updateWindowPartner);
     break;
 
     case SYN_UPDATE_SHAKE:
@@ -630,10 +659,18 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
             _state = PASSIVE;
           } else {
             sendDebug("Orientation the same", 1);
-            abort();
+            sendRequest(_updateWindowPartner, ABORT, 0, 0);
+            _state = PASSIVE;
+            closeUpdateWindow();
+            _lastShakeTime = 0;
+            _synUpdateShakeReceivedTime = 0;
           }
         } else {
-          sendDebug("Ack too late", millis() - _updateShakeTime - UPDATE_SHAKE_DURATION);
+          sendDebug("Ack too late", millis() - _lastShakeTime - UPDATE_SHAKE_DURATION);
+          _state = PASSIVE;
+          closeUpdateWindow();
+          _lastShakeTime = 0;
+          _synUpdateShakeReceivedTime = 0;
         }
       }
     break;
@@ -643,16 +680,18 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       doShake();
       // reset state
       _state = PASSIVE;
+      closeUpdateWindow();
+      _lastShakeTime = 0;
+      _synUpdateShakeReceivedTime = 0;
     break;
 
     case ABORT:
       // orientation was the same, or something else happened,
       // go back to passive
       _state = PASSIVE;
-      _updateWindowPartner = 0;
-      _updateWindowOpenStart = 0;
-      _updateShakeTime = 0;
-      _updateShakeReceivedTime = 0;
+      closeUpdateWindow();
+      _lastShakeTime = 0;
+      _synUpdateShakeReceivedTime = 0;
     break;
 
     case SET_BALANCE:
