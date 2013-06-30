@@ -53,6 +53,7 @@ const float BALANCE_SHAKE_THRESHOLD = 3.0;
 #define SET_DEBUG_LEVEL          'T' // Set debug level
 #define SET_COIN_COUNT           'U' // Set coin count
 #define OUTPUT_TEST              'O' // Turn all outputs on for 2 secs
+#define DO_SHAKE_TEST            'P' // Force a shake to happen
 
 // States
 #define PASSIVE                  1
@@ -178,7 +179,7 @@ void loop(){
 
         // Check for an update shake
         if (isUpdateShake()) {
-          if (millis() - _updateShakeReceivedTime < UPDATE_SHAKE_DURATION) {
+          if (millis() - _synUpdateShakeReceivedTime < UPDATE_SHAKE_DURATION) {
             // If we have received a SYN_UPDATE_SHAKE within UPDATE_SHAKE_DURATION
             // we should acknowledge
             sendRequest(_updateWindowPartner, ACK_UPDATE_SHAKE, _orientation, 0);
@@ -199,7 +200,7 @@ void loop(){
           _updateWindowPartner = 0;
           break;
         }
-        if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
+        if (millis() - _lastShakeTime > UPDATE_SHAKE_DURATION) {
           _state = UPDATE_WINDOW_OPEN;
         }
       break;
@@ -211,7 +212,7 @@ void loop(){
           _updateWindowPartner = 0;
           break;
         }
-        if (millis() - _updateShakeTime > UPDATE_SHAKE_DURATION) {
+        if (millis() - _lastShakeTime > UPDATE_SHAKE_DURATION) {
           _state = UPDATE_WINDOW_OPEN;
         }
       break;
@@ -344,7 +345,7 @@ boolean isUpdateShake() {
     }
   }
 
-  _updateShakeTime = millis();
+  _lastShakeTime = millis();
   sendDebug("Shake", 1, 3);
   return true;
 }
@@ -357,9 +358,11 @@ void doShake() {
   } else {
     add = -1;
   }
+  _lastShakeResult = add;
   _balance += add;
+  _lastShakeTime = millis();
   exerternalMonitor("updatebalance", _balance);
-  showBalance();
+  showShake();
   vibrateFor(1000);
 }
 
@@ -491,16 +494,20 @@ void updateWindowFlashOff() {
 
 // turn on the leds indicated by 1's in the 8-bit leds byte
 // to turn on leds higher than 7, give in startAt = 8
+// brightness can be adjusted by passing a float 0 - 1
 void updateLeds(byte leds) {
   updateLeds(leds, 0);
 }
 void updateLeds(byte leds, int startAt) {
+  updateLeds(leds, startAt, 1);
+}
+void updateLeds(byte leds, int startAt, float brightness) {
   sendDebug("updateLeds", leds);
   for (byte x=0; x<8; x++) {
     if (leds & (1 << x)) {
       sendDebug("Turning on led", x + startAt);
       // Led should be on
-      Tlc.set(x + startAt, 4095);
+      Tlc.set(x + startAt, 4095 * brightness);
     } else {
       sendDebug("Turning off led", x + startAt);
       Tlc.set(x + startAt, 0);
@@ -632,15 +639,14 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
 
     case SYN_UPDATE_SHAKE:
       // window still open?
-      if (_state == UPDATE_WINDOW_OPEN) {
-        // TODO: do we need to check from == _updateWindowPartner?
-        _updateShakeReceivedTime = millis();
+      if (_state == UPDATE_WINDOW_OPEN && from == _updateWindowPartner) {
+        _synUpdateShakeReceivedTime = millis();
         if (isUpdateShake()) {
           // we should acknowledge
           sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
           _state = UPDATE_SHAKE_ACKED;
         }
-      } else if(_state == UPDATE_SHAKE_ACTIVATED) {
+      } else if(_state == UPDATE_SHAKE_ACTIVATED && from == _updateWindowPartner) {
         sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
         _state = UPDATE_SHAKE_ACKED;
       }
@@ -649,7 +655,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case ACK_UPDATE_SHAKE:
       if (_state == UPDATE_SHAKE_ACTIVATED || _state == UPDATE_SHAKE_ACKED) {
         // Was ours within the limit?
-        if (millis() - _updateShakeTime < UPDATE_SHAKE_DURATION) {
+        if (millis() - _lastShakeTime < UPDATE_SHAKE_DURATION) {
           // We both had a shake!
           // are the orientations different?
           if (_orientation != operand1) {
@@ -717,6 +723,10 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       outputTest();
       sendDebug("All outputs high for 2 secs", 1);
     break;
+
+    case DO_SHAKE_TEST:
+      doShake();
+      sendDebug("Shake is faked with orientation:", _orientation);
   }
 }
 
