@@ -13,7 +13,7 @@ def get_first_port():
             return '/dev/%s' % resource
 
 
-def send_cmd(to, operation, operand1, operand2):
+def send_cmd(to, operation, operand1=0, operand2=0):
     operand2_str = "%s%s" % util.to_two_bytes(operand2)
     string = 'AF%sZ%s%s%sFA' % (to, operation, operand1, operand2_str)
     print "sending %s" % string
@@ -74,5 +74,22 @@ def init():
     sf = SerialFlusher(connection, queue)
     sf.start()
     return connection, queue, sf
+
+
+def help():
+    print("""
+    A. Start update sync
+    B. Acknowledge update sync
+    C. Update window is open
+    D. Start shake sync
+    E. Acknowledge shake sync
+    F. Do the update!
+    Z. Abort window and shake
+    S. Set balance
+    T. Set debug level
+    U. Set coin count
+    O. Turn all outputs on for 2 secs
+    P. Force a shake to happen""")
+
 
 connection, queue, sf = init()
