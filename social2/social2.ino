@@ -1,4 +1,4 @@
-#define ID 'A'
+#define ID 'E'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 
@@ -33,6 +33,7 @@ const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
 const int SHOW_BALANCES_TIME = 2 * 1000;
 const int START_UPDATE_WINDOW_FLASH_DURATION = 500;
+const int SHOW_SHAKE_DURATION = 2 * 1000;
 
 
 // Thresholds
@@ -85,6 +86,11 @@ unsigned long _updateWindowOpenStart = 0;
 int _updateWindowFlashTimer = -1;
 int _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
 float _updateWindowFlashDurationDivider = 0.9;
+
+// Shake global vars
+unsigned long _lastShakeTime = 0;
+unsigned long _synUpdateShakeReceivedTime = 0;
+int _lastShakeResult = 0;
 
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
@@ -490,6 +496,43 @@ void updateWindowFlashOff() {
     // only continue if there is enough time
     _updateWindowFlashTimer = timer.setTimeout(_updateWindowFlashDuration, updateWindowFlash);
   }
+}
+
+
+void showShake() {
+  /* Succesfull shake is shown by a transition from red to green (and vice versa)
+     on the balance leds. All red fades out and afterwards, all green fade in.
+     This takes SHOW_SHAKE_DURATION millis. */
+  if (millis() - _lastShakeTime > SHOW_SHAKE_DURATION) {
+    balanceOff();
+    timer.setTimeout(100, showBalance);
+    return;
+  }
+  _outputBlocked = true;
+  // how far in SHOW_SHAKE_DURATION are we
+  float progress = millis() - _lastShakeTime / SHOW_SHAKE_DURATION;
+  byte leds;
+  if (progress < 0.5) {
+    // we are in the decline.
+    float half_progress = 1 - 2 * progress;
+    if (_lastShakeResult > 0) {
+      leds = B00001111;
+    } else {
+      leds = B11110000;
+    }
+    updateLeds(leds, 0, half_progress);
+  } else {
+    // we are getting brighter
+    float half_progress = (progress - 0.5) * 2;
+    if (_lastShakeResult < 0) {
+      byte leds = B00001111;
+    } else {
+      byte leds = B11110000;
+    }
+    updateLeds(leds, 0, half_progress);
+  }
+
+  timer.setTimeout(1000/HZ, showShake);
 }
 
 // turn on the leds indicated by 1's in the 8-bit leds byte
