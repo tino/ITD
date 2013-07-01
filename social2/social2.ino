@@ -2,7 +2,7 @@
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 // NB. Due to a soldering mess up, even letters (B, D, F, etc.) should only
-// be used where the balancde ledds are mixed up. See updateLeds function for
+// be used where the balancde leds are mixed up. See updateLeds function for
 // the implementation
 
 #include <Firmata.h>
@@ -30,6 +30,7 @@ const int VIBRATOR_PIN = 2;
 
 // Times
 const int HZ = 20;
+const int HEARTBEAT = 2 * 1000;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 5 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
@@ -235,7 +236,7 @@ void loop(){
   }
 
   // Heartbeats and DEBUG
-  if (millis() - _lastHeartBeat > 1000) {
+  if (millis() - _lastHeartBeat > HEARTBEAT) {
     _lastHeartBeat = millis();
 
     sendDebug("magnet", digitalRead(MAGNETIC_PIN), 31);
@@ -912,7 +913,7 @@ void processSerial() {
 void lightHeartBeat() {
   // Only show heartbeat led if output is not blocked
   if (!_outputBlocked) {
-    updateLeds(B00011000);
+    updateLeds(B00011000, 0, 0.5);
     timer.setTimeout(100, dimHeartBeat);
   }
 }
