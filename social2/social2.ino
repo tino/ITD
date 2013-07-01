@@ -1,6 +1,9 @@
 #define ID 'E'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
+// NB. Due to a soldering mess up, even letters (B, D, F, etc.) should only
+// be used where the balancde ledds are mixed up. See updateLeds function for
+// the implementation
 
 #include <Firmata.h>
 #include <Tlc5940.h>
@@ -31,7 +34,7 @@ const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
 const int UPDATE_WINDOW_DURATION = 5 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
-const int SHOW_BALANCES_TIME = 2 * 1000;
+const int SHOW_BALANCES_TIME = 3 * 1000;
 const int START_UPDATE_WINDOW_FLASH_DURATION = 500;
 const int SHOW_SHAKE_DURATION = 2 * 1000;
 
@@ -545,14 +548,27 @@ void updateLeds(byte leds, int startAt) {
   updateLeds(leds, startAt, 1);
 }
 void updateLeds(byte leds, int startAt, float brightness) {
-  sendDebug("updateLeds", leds);
+  sendDebug("updateLeds", leds, 51);
+  // Due to a fuckup with the order of the balance leds, we need to invert them
+  // when the ID is even.
+  if (int(ID) % 2 == 0 and startAt == 0) {
+    byte reversed = B00000000;
+    for (int i=0; i<8; i++) {
+      if (leds & (1 << (7-i))) {
+        reversed |= 1 << i;
+      }
+    }
+    leds = reversed;
+    sendDebug("led order swapped", leds, 52);
+  }
+
   for (byte x=0; x<8; x++) {
     if (leds & (1 << x)) {
-      sendDebug("Turning on led", x + startAt);
+      sendDebug("Turning on led", x + startAt, 53);
       // Led should be on
       Tlc.set(x + startAt, 4095 * brightness);
     } else {
-      sendDebug("Turning off led", x + startAt);
+      sendDebug("Turning off led", x + startAt, 53);
       Tlc.set(x + startAt, 0);
     }
   }
