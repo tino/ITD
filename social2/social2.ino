@@ -509,17 +509,19 @@ void showShake() {
      This takes SHOW_SHAKE_DURATION millis. */
   if (millis() - _lastShakeTime > SHOW_SHAKE_DURATION) {
     balanceOff();
-    timer.setTimeout(100, showBalance);
+    timer.setTimeout(500, showBalance);
+    sendDebug("showShake done", _lastShakeTime, 51);
     return;
   }
   _outputBlocked = true;
   // how far in SHOW_SHAKE_DURATION are we
-  float progress = millis() - _lastShakeTime / SHOW_SHAKE_DURATION;
+  float progress = (millis() - _lastShakeTime) / float(SHOW_SHAKE_DURATION);
+  sendDebug("showShake progress", progress * 100, 51);
   byte leds;
   if (progress < 0.5) {
     // we are in the decline.
     float half_progress = 1 - 2 * progress;
-    if (_lastShakeResult > 0) {
+    if (_lastShakeResult < 0) {
       leds = B00001111;
     } else {
       leds = B11110000;
@@ -528,10 +530,10 @@ void showShake() {
   } else {
     // we are getting brighter
     float half_progress = (progress - 0.5) * 2;
-    if (_lastShakeResult < 0) {
-      byte leds = B00001111;
+    if (_lastShakeResult > 0) {
+      leds = B00001111;
     } else {
-      byte leds = B11110000;
+      leds = B11110000;
     }
     updateLeds(leds, 0, half_progress);
   }
