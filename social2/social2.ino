@@ -162,6 +162,8 @@ void loop(){
     setOrientation();
     setUpdateActivation();
 
+    sendDebug("x+y", x + y, 74);
+
     // Act according to state
     switch (_state) {
 
@@ -254,6 +256,7 @@ void loop(){
     sendDebug("magnet", digitalRead(MAGNETIC_PIN), 31);
     sendDebug("Alive", 1);
     sendDebug("orientation", _orientation, 41);
+    sendDebug("balance", _balance, 11);
     sendDebug("state", _state, 21);
     sendDebug("outputBlocked", _outputBlocked, 61);
 
@@ -351,46 +354,54 @@ boolean isShowBalance() {
 }
 
 boolean isUpdateShake() {
-  // Check for one single peak in middle of the last second
-  int items = HZ/3;
-
-  // first third
-  for (int i=0; i<items; i++) {
-    if (_switchQueue[i] != _switchQueue[i+1]) {
-      // sendDebug("fail on first", 1, 3);
-      return false;
-    }
-  }
-
-  // middle third
+  // Check for one single peak in the last second
+  int items = HZ;
+  int combined = 0;
+  int lastCombined = _xQueue[0] + _yQueue[0];
+  int diff = 0;
+  int diffSum = 0;
+  int lastDiff = 0;
   int changes = 0;
-  for (int i=items; i<2*items; i++) {
-    if (_switchQueue[i] != _switchQueue[i+1])
-      changes = changes + 1;
-  }
-  // sendDebug("changes", changes, 3);
-  if (changes != 2) return false;
+  int max = 0;
 
-  // last third
-  for (int i=2*items; i<3*items; i++) {
-    if (_switchQueue[i] != _switchQueue[i+1]) {
-      // sendDebug("fail on last", 1, 3);
-      return false;
+  for (int i=0; i<items; i++) {
+    combined = _xQueue[i] + _yQueue[i];
+    if (combined - lastCombined == 0) {
+      continue;
+    } else {
+      diff = combined - lastCombined;
     }
-  }
+    if (diff != lastDiff) {
+      changes++;
+      diffSum += diff;
+    }
 
-  _lastShakeTime = millis();
-  sendDebug("Shake", 1, 3);
-  return true;
+    // calculate max
+    if (combined > max)
+      max = combined;
+
+    lastDiff = diff;
+    lastCombined = combined;
+  }
+  sendDebug("changes", changes, 72);
+  sendDebug("max", max, 72);
+  sendDebug("diffSum", diffSum, 72);
+
+  if (max == 2 and changes >= 2 and diffSum == 0) {
+    _lastShakeTime = millis();
+    sendDebug("Shake", 1, 71);
+    return true;
+  }
+  return false;
 }
 
 void doShake() {
   sendDebug("SHAKE DONE!", 1);
   int add;
   if (_orientation == 0) {
-    add = 1;
-  } else {
     add = -1;
+  } else {
+    add = 1;
   }
   _lastShakeResult = add;
   _balance += add;
