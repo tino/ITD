@@ -1,4 +1,4 @@
-#define ID 'E'
+#define ID 'C'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 // NB. Due to a soldering mess up, even letters (B, D, F, etc.) should only
@@ -32,7 +32,7 @@ const int VIBRATOR_PIN = 2;
 const int HZ = 20;
 const int HEARTBEAT = 2 * 1000;
 const int UPDATE_ACTIVATION_DURATION = 1 * 1000;
-const int UPDATE_WINDOW_DURATION = 5 * 1000;
+const int UPDATE_WINDOW_DURATION = 6 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
 const int SHOW_BALANCES_TIME = 3 * 1000;
@@ -89,7 +89,7 @@ char _updateWindowPartner = '0';
 unsigned long _updateWindowOpenStart = 0;
 int _updateWindowFlashTimer = -1;
 int _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
-float _updateWindowFlashDurationDivider = 0.9;
+float _updateWindowFlashDurationDivider = 0.85;
 
 // Shake global vars
 unsigned long _lastShakeTime = 0;
@@ -136,7 +136,7 @@ void loop(){
 
   // Main processing loop. Should only run if we are not outputting things to
   // the user, and only HZ times per second.
-  if (!_outputBlocked && millis() - _lastLoop > 1000/HZ)  {
+  if (millis() - _lastLoop > 1000/HZ)  {
 
     _lastLoop = millis();
 
@@ -158,13 +158,13 @@ void loop(){
     switch (_state) {
 
       case PASSIVE:
-        if (updateActivated()) {
+        if (!_outputBlocked and updateActivated()) {
           // We are passive and update was activated, so broadcast
           sendDebug("updateActivated", 1);
           _state = UPDATE_WINDOW_ACTIVATED;
           sendRequest('0', SYN_UPDATE_WINDOW, 'x', 'x');
         }
-        if (isShowBalance()) {
+        if (!_outputBlocked and isShowBalance()) {
           sendDebug("balance", _balance);
           sendDebug("coinCount", _coinCount);
           // exerternalMonitor("showbalance", _balance);
@@ -175,7 +175,7 @@ void loop(){
 
       case UPDATE_WINDOW_ACTIVATED:
         // if updateActivation is over reset state
-        if (!updateActivated()) _state = PASSIVE;
+        if (!updateActivated()) closeUpdateWindow();
       break;
 
       case UPDATE_WINDOW_ACKED:
@@ -247,6 +247,7 @@ void loop(){
     sendDebug("Alive", 1, 11);
     sendDebug("orientation", _orientation, 41);
     sendDebug("state", _state, 21);
+    sendDebug("outputBlocked", _outputBlocked, 61);
 
     lightHeartBeat();
 
