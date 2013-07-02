@@ -589,7 +589,6 @@ void updateLeds(byte leds, int startAt, float brightness) {
 void allLedsOn() {
   byte leds = B11111111;
   updateLeds(leds);
-  leds = B11111111;
   updateLeds(leds, 8);
 }
 void allLedsOff() {
