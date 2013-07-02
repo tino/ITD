@@ -36,6 +36,7 @@ const int UPDATE_WINDOW_DURATION = 6 * 1000;
 const int UPDATE_SHAKE_DURATION = 2 * 1000;
 const int OUTPUT_TEST_DURATION = 2 * 1000;
 const int SHOW_BALANCES_TIME = 3 * 1000;
+const int SHOW_BALANCES_VIBRATION = 600;
 const int START_UPDATE_WINDOW_FLASH_DURATION = 500;
 const int SHOW_SHAKE_DURATION = 2 * 1000;
 
@@ -411,6 +412,7 @@ void closeUpdateWindow() {
 // Show balance with leds
 void showBalance() {
   _outputBlocked = true;
+  vibrateFor(SHOW_BALANCES_VIBRATION);
 
   int workingBalance;
   if (_balance > 4) {
@@ -777,8 +779,8 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     break;
 
     case SET_DEBUG_LEVEL:
-      DEBUG = operand2;
       exerternalMonitor("Debug level set to", DEBUG);
+      DEBUG = operand2;
     break;
 
     case SET_COIN_COUNT:
@@ -968,7 +970,6 @@ void sendDebug(char key[], int value, int debugLevel) {
     Serial.println(">");
   }
 }
-
 
 void exerternalMonitor(char key[], int value) {
   Serial.print("<<");
