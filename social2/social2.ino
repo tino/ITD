@@ -382,6 +382,7 @@ void openUpdateWindow(char with) {
   _updateWindowOpenStart = millis();
   _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
   updateWindowFlash();
+  vibrateFor(500);
   _outputBlocked = true;
 }
 
@@ -430,7 +431,7 @@ void showBalance() {
       leds = B00010000;
       break;
     case 0:
-      leds = 0;
+      leds = B00011000;
       break;
     case 1:
       leds = B00001000;
