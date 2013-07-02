@@ -797,6 +797,7 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
     case DO_SHAKE_TEST:
       doShake();
       sendDebug("Shake is faked with orientation:", _orientation);
+    break;
   }
 }
 
@@ -934,6 +935,10 @@ void dimHeartBeat() {
   }
 }
 
+void sendDebug(char key[], int value) {
+  // Debug with level 1
+  sendDebug(key, value, 1);
+}
 void sendDebug(char key[], int value, int debugLevel) {
   int DEBUG_STREAM = 0;
   int DEBUG_LEVEL = 0;
@@ -942,6 +947,8 @@ void sendDebug(char key[], int value, int debugLevel) {
   if (DEBUG > 10) {
     DEBUG_STREAM = DEBUG / 10;
     DEBUG_LEVEL = DEBUG % 10;
+  } else {
+    DEBUG_LEVEL = DEBUG;
   }
 
   if (debugLevel > 10) {
@@ -961,20 +968,6 @@ void sendDebug(char key[], int value, int debugLevel) {
     Serial.print(millis());
     Serial.println(">");
   }
-}
-
-// Debug with level 1
-void sendDebug(char key[], int value) {
-  if (DEBUG == 0) return;
-  Serial.print("<");
-  Serial.print(ID);
-  Serial.print(":");
-  Serial.print(key);
-  Serial.print(":");
-  Serial.print(value);
-  Serial.print(":");
-  Serial.print(millis());
-  Serial.println(">");
 }
 
 
