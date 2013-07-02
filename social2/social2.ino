@@ -1,4 +1,4 @@
-#define ID 'C'
+#define ID 'G'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 // NB. Due to a soldering mess up, even letters (B, D, F, etc.) should only
@@ -39,6 +39,7 @@ const int SHOW_BALANCES_TIME = 3 * 1000;
 const int SHOW_BALANCES_VIBRATION = 600;
 const int START_UPDATE_WINDOW_FLASH_DURATION = 500;
 const int SHOW_SHAKE_DURATION = 2 * 1000;
+const int MAX_OUTPUT_BLOCKED_TIME = 10 * 1000;
 
 
 // Thresholds
@@ -100,6 +101,7 @@ int _lastShakeResult = 0;
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
 boolean _outputBlocked = false;
+unsigned long _outputBlockedTime = 0;
 SimpleTimer timer;
 
 
@@ -138,8 +140,13 @@ void loop(){
   // Main processing loop. Should only run if we are not outputting things to
   // the user, and only HZ times per second.
   if (millis() - _lastLoop > 1000/HZ)  {
-
     _lastLoop = millis();
+
+    // Unblock output if stuck
+    if (_outputBlockedTime != 0 and millis() - _outputBlockedTime > MAX_OUTPUT_BLOCKED_TIME) {
+      unblockOutput();
+      sendDebug("Output had to be unblocked!", 1);
+    }
 
     // Update our readings
     int x = digitalRead(TILT_PIN_1);
@@ -245,7 +252,7 @@ void loop(){
     _lastHeartBeat = millis();
 
     sendDebug("magnet", digitalRead(MAGNETIC_PIN), 31);
-    sendDebug("Alive", 1, 11);
+    sendDebug("Alive", 1);
     sendDebug("orientation", _orientation, 41);
     sendDebug("state", _state, 21);
     sendDebug("outputBlocked", _outputBlocked, 61);
@@ -258,6 +265,15 @@ void loop(){
 //////////////////////////////////////
 // ACTION FUNCTIONS
 //////////////////////////////////////
+
+void blockOutput() {
+  _outputBlocked = true;
+  _outputBlockedTime = millis();
+}
+void unblockOutput() {
+  _outputBlocked = false;
+  _outputBlockedTime = 0;
+}
 
 boolean updateActivated() {
   if (_lastUpdateActivation > 0)
@@ -391,7 +407,7 @@ void openUpdateWindow(char with) {
   _updateWindowFlashDuration = START_UPDATE_WINDOW_FLASH_DURATION;
   updateWindowFlash();
   vibrateFor(500);
-  _outputBlocked = true;
+  blockOutput();
 }
 
 void closeUpdateWindow() {
@@ -402,7 +418,7 @@ void closeUpdateWindow() {
   _updateWindowFlashTimer = -1;
   _lastShakeTime = 0;
   _synUpdateShakeReceivedTime = 0;
-  _outputBlocked = false;
+  unblockOutput();
 }
 
 //////////////////////////////////////
@@ -411,7 +427,7 @@ void closeUpdateWindow() {
 
 // Show balance with leds
 void showBalance() {
-  _outputBlocked = true;
+  blockOutput();
   vibrateFor(SHOW_BALANCES_VIBRATION);
 
   int workingBalance;
@@ -462,13 +478,13 @@ void showBalance() {
 void balanceOff() {
   byte leds = B00000000;
   updateLeds(leds);
-  _outputBlocked = false;
+  unblockOutput();
 }
 
 // Show coin count with the blue leds
 // The coin count leds are 8 - 15
 void showCoinCount() {
-  _outputBlocked = true;
+  blockOutput();
   // in binary   == dec
   //    B0000001 == 1
   //    B0000011 == 3
@@ -493,7 +509,7 @@ void showCoinCount() {
 void coinCountOff() {
   byte leds = B00000000;
   updateLeds(leds, 8);
-  _outputBlocked = false;
+  unblockOutput();
 }
 
 void updateWindowFlash() {
@@ -523,7 +539,7 @@ void showShake() {
     sendDebug("showShake done", _lastShakeTime, 51);
     return;
   }
-  _outputBlocked = true;
+  blockOutput();
   // how far in SHOW_SHAKE_DURATION are we
   float progress = (millis() - _lastShakeTime) / float(SHOW_SHAKE_DURATION);
   sendDebug("showShake progress", progress * 100, 51);
@@ -596,7 +612,7 @@ void allLedsOn() {
 void allLedsOff() {
   coinCountOff();
   balanceOff();
-  _outputBlocked = false;
+  unblockOutput();
 }
 
 // Turn on the vibrator for <milliseconds>
@@ -616,7 +632,7 @@ void vibrateOff() {
 // Test all outputs.
 // Set all leds on, and turn on the vibrator
 void outputTest() {
-  _outputBlocked = true;
+  blockOutput();
   allLedsOn();
   vibrateOn();
 
