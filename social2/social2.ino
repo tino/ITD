@@ -81,7 +81,7 @@ int _magneticQueue[HISTORY];
 // Global variables
 int _balance = 0;
 int _coinCount = 0;
-int _orientation = 0;
+int _orientation = 0; // 0 = palm down, 1 = palm up
 int _state = PASSIVE;
 int _lastState = PASSIVE;
 unsigned long _lastUpdateActivation = 0;
@@ -677,7 +677,7 @@ void pushQueue(int array[], int size, int v) {
 
 // Process the incomming message
 void execute(unsigned char from, unsigned char operation, unsigned char operand1, int operand2){
-  if (DEBUG >= 2){
+  if (DEBUG >= 90){
     Serial.println("----");
     Serial.print(ID);
     Serial.print("(");
@@ -728,7 +728,8 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
       // window still open?
       if (_state == UPDATE_WINDOW_OPEN && from == _updateWindowPartner) {
         _synUpdateShakeReceivedTime = millis();
-        if (isUpdateShake()) {
+        // We acknowledge if our orientation is palm up
+        if (_orientation == 1) {
           // we should acknowledge
           sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
           _state = UPDATE_SHAKE_ACKED;
