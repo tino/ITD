@@ -281,32 +281,34 @@ void setOrientation() {
   // 0 / 0 is palm down
   // 1 / 1 is palm down, sorta... :)
   // average over the half second
-  // int sum = 0;
-  // for (int i=1; i < HZ/2 + 1 ; i++) {
-  //   if (_xQueue[i] == _yQueue[i]) {
-  //     sum = sum + _xQueue[i];
-  //   }
-  // }
-  // if ((sum / float(HZ/2)) > 0.8) {
-  //   _orientation = 1;
-  // } else if ((sum / float(HZ/2)) < 0.1) {
-  //   _orientation = 0;
-  // } // else don't change
-
-  // With swithpin
-  // off is palm down, on is palm up
-  // average over half a second
+  sendDebug("x", _xQueue[0], 43);
+  sendDebug("y", _yQueue[0], 43);
   int sum = 0;
   for (int i=1; i < HZ/2 + 1 ; i++) {
-    if (_switchQueue[i] == _switchQueue[i+1]) {
-      sum = sum + _switchQueue[i];
+    if (_xQueue[i] == _yQueue[i]) {
+      sum = sum + _xQueue[i];
     }
   }
-  if ((sum / float(HZ/2)) > 0.9) {
+  if ((sum / float(HZ/2)) > 0.8) {
     _orientation = 1;
   } else if ((sum / float(HZ/2)) < 0.1) {
     _orientation = 0;
   } // else don't change
+
+  // With swithpin
+  // off is palm down, on is palm up
+  // average over half a second
+  // int sum = 0;
+  // for (int i=1; i < HZ/2 + 1 ; i++) {
+  //   if (_switchQueue[i] == _switchQueue[i+1]) {
+  //     sum = sum + _switchQueue[i];
+  //   }
+  // }
+  // if ((sum / float(HZ/2)) > 0.9) {
+  //   _orientation = 1;
+  // } else if ((sum / float(HZ/2)) < 0.1) {
+  //   _orientation = 0;
+  // } // else don't change
 }
 
 boolean isShowBalance() {
