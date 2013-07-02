@@ -114,6 +114,10 @@ void setup(){
   pinMode(TILT_PIN_2, INPUT);
   pinMode(SWITCH_PIN, INPUT);
 
+  // put pin 5 low so it can be used with pull down for magnet of C
+  pinMode(5, OUTPUT);
+  digitalWrite(5, 0);
+
   exerternalMonitor("entrance", ID);
   sendDebug("Entered the building", ID);
 
@@ -267,7 +271,7 @@ void setUpdateActivation() {
   for(int i=0; i < items; i++) {
     sum += _magneticQueue[i];
   }
-  if (sum / items > 950) {
+  if (sum / float(items) > 0.9) {
     _lastUpdateActivation = millis();
   }
 }
