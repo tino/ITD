@@ -1,4 +1,4 @@
-#define ID 'G'
+#define ID 'A'
 // ^ Device ID
 // Letters A-Z can be used. 0 is reserved for broadcast
 // NB. Due to a soldering mess up, even letters (B, D, F, etc.) should only
@@ -97,6 +97,7 @@ float _updateWindowFlashDurationDivider = 0.85;
 unsigned long _lastShakeTime = 0;
 unsigned long _synUpdateShakeReceivedTime = 0;
 int _lastShakeResult = 0;
+unsigned long _startShowShakeTime = 0;
 
 unsigned long _lastShowBalance = 0;
 unsigned long _startOutputTest = 0;
@@ -122,7 +123,6 @@ void setup(){
   digitalWrite(5, 0);
 
   exerternalMonitor("entrance", ID);
-  sendDebug("Entered the building", ID);
 
   allLedsOn();
   delay(100);
@@ -252,9 +252,10 @@ void loop(){
   // Heartbeats and DEBUG
   if (millis() - _lastHeartBeat > HEARTBEAT) {
     _lastHeartBeat = millis();
+    exerternalMonitor("alive", ID);
+    exerternalMonitor("balance", _balance);
 
     sendDebug("magnet", digitalRead(MAGNETIC_PIN), 31);
-    sendDebug("Alive", 1);
     sendDebug("orientation", _orientation, 41);
     sendDebug("balance", _balance, 11);
     sendDebug("state", _state, 21);
@@ -389,14 +390,14 @@ boolean isUpdateShake() {
 
   if (max == 2 and changes >= 2 and diffSum == 0) {
     _lastShakeTime = millis();
-    sendDebug("Shake", 1, 71);
+    sendDebug("Physical shake", 1, 71);
     return true;
   }
   return false;
 }
 
 void doShake() {
-  sendDebug("SHAKE DONE!", 1);
+  sendDebug("doSHAKE!", 1);
   int add;
   if (_orientation == 0) {
     add = -1;
@@ -405,9 +406,9 @@ void doShake() {
   }
   _lastShakeResult = add;
   _balance += add;
-  _lastShakeTime = millis();
-  exerternalMonitor("updatebalance", _balance);
-  showShake();
+  _startShowShakeTime = millis();
+  exerternalMonitor("balance", _balance);
+  startShowShake();
   vibrateFor(1000);
 }
 
@@ -515,6 +516,7 @@ void showCoinCount() {
   }
   updateLeds(leds, 8);
   timer.setTimeout(SHOW_BALANCES_TIME, coinCountOff);
+  exerternalMonitor("coincount", _coinCount);
 }
 
 void coinCountOff() {
@@ -539,20 +541,30 @@ void updateWindowFlashOff() {
   }
 }
 
+void startShowShake() {
+  // Zero all leds first, and cancel any updateWindowFlashes
+  timer.deleteTimer(_updateWindowFlashTimer);
+  _updateWindowFlashTimer = -1;
+  allLedsOff();
+  // ready to show the shake effects
+  showShake();
+}
+
 
 void showShake() {
   /* Succesfull shake is shown by a transition from red to green (and vice versa)
      on the balance leds. All red fades out and afterwards, all green fade in.
      This takes SHOW_SHAKE_DURATION millis. */
-  if (millis() - _lastShakeTime > SHOW_SHAKE_DURATION) {
+  if (millis() - _startShowShakeTime > SHOW_SHAKE_DURATION) {
     balanceOff();
     timer.setTimeout(500, showBalance);
-    sendDebug("showShake done", _lastShakeTime, 51);
+    sendDebug("showShake done", _startShowShakeTime, 51);
+    _startShowShakeTime = 0;
     return;
   }
   blockOutput();
   // how far in SHOW_SHAKE_DURATION are we
-  float progress = (millis() - _lastShakeTime) / float(SHOW_SHAKE_DURATION);
+  float progress = (millis() - _startShowShakeTime) / float(SHOW_SHAKE_DURATION);
   sendDebug("showShake progress", progress * 100, 51);
   byte leds;
   if (progress < 0.5) {
@@ -589,6 +601,7 @@ void updateLeds(byte leds, int startAt) {
 }
 void updateLeds(byte leds, int startAt, float brightness) {
   sendDebug("updateLeds", leds, 51);
+  // sendDebug("passed updateLeds", 1);
   // Due to a fuckup with the order of the balance leds, we need to invert them
   // when the ID is even.
   if (int(ID) % 2 == 0 and startAt == 0) {
@@ -744,10 +757,14 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
           // we should acknowledge
           sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
           _state = UPDATE_SHAKE_ACKED;
+          _lastShakeTime = millis();
+        } else {
+          sendDebug("SYN_UPDATE_SHAKE received, but palm down", 1, 71);
         }
       } else if(_state == UPDATE_SHAKE_ACTIVATED && from == _updateWindowPartner) {
         sendRequest(from, ACK_UPDATE_SHAKE, _orientation, 0);
         _state = UPDATE_SHAKE_ACKED;
+        sendDebug("This should be impossible", 1, 71);
       }
     break;
 
@@ -760,43 +777,33 @@ void execute(unsigned char from, unsigned char operation, unsigned char operand1
           if (_orientation != operand1) {
             sendRequest(from, DO_UPDATE, _orientation, 0);
             doShake();
-            // reset state
-            _state = PASSIVE;
-          } else {
-            sendDebug("Orientation the same", 1);
-            sendRequest(_updateWindowPartner, ABORT, 0, 0);
-            _state = PASSIVE;
             closeUpdateWindow();
-            _lastShakeTime = 0;
-            _synUpdateShakeReceivedTime = 0;
+          } else {
+            sendDebug("Orientation the same", 1, 71);
+            sendRequest(_updateWindowPartner, ABORT, 0, 0);
+            closeUpdateWindow();
           }
         } else {
-          sendDebug("Ack too late", millis() - _lastShakeTime - UPDATE_SHAKE_DURATION);
-          _state = PASSIVE;
+          sendDebug("Ack too late", millis() - _lastShakeTime - UPDATE_SHAKE_DURATION, 71);
           closeUpdateWindow();
-          _lastShakeTime = 0;
-          _synUpdateShakeReceivedTime = 0;
         }
       }
     break;
 
     case DO_UPDATE:
-      if (_state != UPDATE_SHAKE_ACKED) return;
+      if (_state != UPDATE_SHAKE_ACKED) {
+        sendDebug("DO_UPDATE received but in wrong state", _state, 71);
+        return;
+      }
+      sendDebug("DO_UPDATE received and thus doShake", 1, 71);
       doShake();
-      // reset state
-      _state = PASSIVE;
       closeUpdateWindow();
-      _lastShakeTime = 0;
-      _synUpdateShakeReceivedTime = 0;
     break;
 
     case ABORT:
       // orientation was the same, or something else happened,
       // go back to passive
-      _state = PASSIVE;
       closeUpdateWindow();
-      _lastShakeTime = 0;
-      _synUpdateShakeReceivedTime = 0;
     break;
 
     case SET_BALANCE:
@@ -1006,5 +1013,7 @@ void exerternalMonitor(char key[], int value) {
   Serial.print(key);
   Serial.print(":");
   Serial.print(value);
+  Serial.print(":");
+  Serial.print(millis());
   Serial.println(">>");
 }
