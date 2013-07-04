@@ -7,10 +7,24 @@ import serial
 from pyfirmata import util
 
 
+# Commands
+SET_BALANCE = 'S'
+SET_DEBUG_LEVEL = 'T'
+SET_COIN_COUNT = 'U'
+OUTPUT_TEST = 'O'
+DO_SHAKE_TEST = 'P'
+
+
 def get_first_port():
     for resource in os.listdir('/dev'):
         if resource.startswith('tty.usb'):
             return '/dev/%s' % resource
+
+
+def send_cmd_serial(connection, to, operation, operand1=0, operand2=0):
+    operand2_str = "%s%s" % util.to_two_bytes(operand2)
+    string = 'AF%sZ%s%s%sFA' % (to, operation, operand1, operand2_str)
+    return connection.write(string)
 
 
 def send_cmd(to, operation, operand1=0, operand2=0):
@@ -28,6 +42,14 @@ def read(listen_to=None):
             msg = queue.get_nowait()
             if msg[1:2] in listen_to or msg[2:3] in listen_to:
                 print msg
+
+def read_sock():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((UDP_IP, UDP_PORT))
+    while True:
+        data, addr = sock.recvfrom(1024)
+        print data
+
 
 
 class SerialFlusher(threading.Thread):
@@ -92,4 +114,4 @@ def help():
     P. Force a shake to happen""")
 
 
-connection, queue, sf = init()
+# connection, queue, sf = init()
